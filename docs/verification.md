@@ -73,7 +73,12 @@ native memory active: directional only, no general cost or quality claim.
 V3 as a controlled cache experiment, V5 (does a `precompute` skip affect the compaction that follows), V6
 (10 s hook budget with large artifact sets), image inside a rebuilt mixed message.
 
-## Round 4 (planned): 100k-token sessions
+## Round 4 (planned, not yet run): spec 2 live checks and 100k-token sessions
+
+Status: deferred on 2026-10-05. The shared Claude five-hour quota was 96% used, so the tester stopped before any
+model launch (per its brief). The brief (tester assignment `m_526`, code commit `9210a02`) is unchanged and
+reusable: Stage A checks the proactive trigger at a low `triggerTokens`, `/shake` queued then run, `/ctrscm`, and
+what the person sees when a pass skips; Stage B is the comparison below.
 
 Both arms run with the engine auto-compact window at its documented minimum (100k tokens). The Shake arm
 adds the proactive trigger (`triggerTokens` about 70000, spec 2) so Shake fires before the engine does; the

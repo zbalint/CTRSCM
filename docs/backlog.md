@@ -25,6 +25,7 @@ Status: the running list of open items. It is a tracker, not a design: a decisio
 | B6 | Windows path behavior in `$.fs` (v1 targets Linux and WSL) | docs |
 | B7 | Image or mixed-content safety if V2 shows a rebuilt user message loses non-text blocks | docs |
 | B8 | Exact token counts if the engine ever exposes a counter | docs |
+| B10 | Registered-hook tests cannot inject custom `PluginOptions` (test API has no userConfig injection; inline wrappers fail the hook analyzer), so invalid parsed options and `fallback: skip` are covered only by pure `parseConfig` tests; revisit when the engine adds options injection to `claude plugin test` | code |
 
 ## Closed
 

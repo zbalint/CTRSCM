@@ -12,11 +12,12 @@ a summarizer.
 
 ## Status
 
-Design and first spec only; nothing is implemented yet.
+Spec 1 (core Shake, artifact store and recovery tool) is implemented and tested.
 
-- Spec 1 (core Shake) is locked: [docs/specs/spec-1-core-shake.md](docs/specs/spec-1-core-shake.md).
-- The Mod API was read from the published declarations (Claude Code 2.1.289, `anthropics/claude-code`
-  at `2bfb629`); what is verified and what is still open is in [docs/architecture.md](docs/architecture.md).
+- The plugin validates strictly; the mock-based suite covers config, selection, chunked artifacts,
+  recovery pages and registered hook fallbacks.
+- Live interactive behavior remains open verification work listed in
+  [docs/architecture.md](docs/architecture.md) (V1–V7).
 - Mods are early access: hooks modules load only where function hooks are enabled, and the
   API may change between releases without notice.
 
@@ -38,17 +39,18 @@ Claude Code's built-in compaction whenever Shake cannot safely make enough progr
 
 ## Trying it
 
-Once spec 1 is implemented:
+The core Shake implementation is available from this repository:
 
 ```sh
 claude --plugin-dir .
 ```
 
-then `/compact`, or let the engine compact at its threshold. Tests and manifest validation:
+Then `/compact`, or let the engine compact at its threshold. Tests and manifest validation:
 
 ```sh
 claude plugin validate . --strict
 claude plugin test .
+. ~/.nvm/nvm.sh && npx tsc -p tsconfig.json
 ```
 
 ## Contributing

@@ -1,0 +1,14 @@
+{
+  "name": "ctrscm",
+  "version": "0.1.0",
+  "description": "Mechanically externalize old tool-result text during compaction while preserving conversation text and tool calls. Recover original output from paged local artifacts; fall back to built-in compaction when Shake cannot safely save enough context.",
+  "author": { "name": "zbalint" },
+  "userConfig": {
+    "protectTokens": { "type": "string", "title": "Protected recent context", "description": "Estimated tokens of recent context protected from Shake.", "required": false, "default": "16000" },
+    "minSavings": { "type": "string", "title": "Minimum savings", "description": "Minimum estimated token savings required to apply Shake.", "required": false, "default": "4000" },
+    "minResultTokens": { "type": "string", "title": "Minimum result size", "description": "Minimum estimated tokens in an eligible tool result.", "required": false, "default": "200" },
+    "protectedTools": { "type": "string", "title": "Protected tools", "description": "Comma-separated tool names whose results are never externalized.", "required": false, "default": "Skill" },
+    "artifactDir": { "type": "string", "title": "Artifact directory", "description": "Artifact root; empty uses HOME/.ctrscm/artifacts.", "required": false, "default": "" },
+    "fallback": { "type": "string", "title": "Shake fallback", "description": "Use built-in compaction or skip when Shake is not applied.", "required": false, "default": "builtin", "options": ["builtin", "skip"] }
+  }
+}

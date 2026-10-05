@@ -1,0 +1,4 @@
+{
+  "description": "Shake compaction and paged artifact recovery.",
+  "modules": ["./register.ts"]
+}

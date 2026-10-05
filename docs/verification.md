@@ -234,5 +234,5 @@ rate is claimed. The 20000 limit's deny path and resumed-session placeholder per
 
 ## Not run (after round 6)
 
-V3 as a controlled cache experiment with equal reads, V5, V6, an image inside a rebuilt mixed message, a proactive
+Any model with a 1M-token window (all live runs used Haiku 4.5 with a 200k window), sessions near 150k tokens or more, V3 as a controlled cache experiment with equal reads, V5, V6, an image inside a rebuilt mixed message, a proactive
 request that skips (L3), built-in Q4 and Q5, a plain (non-fork) `--resume` of a shaken session, a persistent install.

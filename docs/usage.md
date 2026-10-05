@@ -54,7 +54,7 @@ default and one `CTRSCM: option ...` line is logged at session start. `/ctrscm` 
 
 What to tune first:
 
-- `triggerPercent` is a percentage of the model's full context window (for example 200k). The engine's own automatic
+- `triggerPercent` is a percentage of the model's full context window (200k on Haiku 4.5, which the live tests used; 1M on the 1M-context models, where the default 50% means 500k tokens, so set `triggerTokens` instead). The engine's own automatic
   compaction can fire first when its window is smaller; Shake still runs for it, just not as a proactive request. To make
   the proactive request come first, set `triggerTokens` several thousand tokens (more than one turn's growth) below the
   engine's threshold.

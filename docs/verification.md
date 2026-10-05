@@ -151,6 +151,42 @@ Reproduction material (kept in a temporary directory outside the repository, not
 truth map, both settings files (non-secret, quoted above for Stage A and in the options above for Stage B), the
 analysis scripts, the per-provider usage table.
 
+## Round 5: E1, what a resumed shaken session holds (one forked launch)
+
+Question (backlog B11): after resuming a session that Shake rewrote, are the placeholders still in the engine's transcript,
+and does the model see them? Method: the round 4 Stage B Shake session resumed with `--fork-session` (the original
+transcript hash is unchanged afterwards), the same plugin and settings, plus a throwaway diagnostic plugin (loaded as a
+second `--plugin-dir`, kept outside the repository) that logs at each turn start how many tool results in
+`$.session.messages()` begin with the placeholder prefix (counts only). Four prompts, no model tool calls expected:
+T1 and T4 ask the model to quote the first 60 characters of every tool result beginning with `[CTRSCM`; T2 asks for an exact
+value from a shaken file without naming the recovery tool; T3 asks for the first tool result it can see. The same
+command shape as round 4 Stage B with the extra `--plugin-dir`, `--resume <session> --fork-session`.
+
+| Turn | Engine view (messages / tool results / placeholder entries) | Model's literal placeholder quotes | Other result |
+| --- | --- | ---: | --- |
+| T1 | 235 / 41 / 17 | 0 | quoted two recovery-result headers (`CTRSCM artifact <id>`), no NONE |
+| T2 | 475 / 82 / 54 | 0 | refused to recover (answered that the result was externalized); wrong answer, zero tool calls |
+| T3 | 478 / 82 / 54 | 1 | quoted one 60-character placeholder prefix |
+| T4 | 481 / 82 / 54 | 1 | quoted one 60-character placeholder prefix |
+
+Between T1 and T2 the proactive trigger fired in the resumed session (context 64%): it shook 20 results (~112680
+estimated tokens), 131447 to 21733 tokens in 153 ms, so T2 to T4 are not a pure resume test.
+
+Structure (session file, counts only): the engine view holds the placeholders after a forked resume (17 entries, 11 distinct
+artifacts), which rules out "the engine drops them" for this path. The fork carries no inherited compaction boundary records
+(the original has 2) and replays the pre-compaction history, so the resumed context is large again (the proactive trigger
+fired at once). Every placeholder row is a plain text tool-result block with no stored tool-result record; the 24 original
+tool results in the same transcript all have typed records. All placeholders for the same size share the same first 60
+characters, so quote counts cannot prove which ones the model saw. 20 artifacts were written by the new pass but only 14
+are referenced afterwards (6 orphans, harmless inert files).
+
+Reading: the placeholder rows survive in the engine view; whether the provider payload carries them is not established
+(no outgoing payload capture), and a fork is not a plain resume. The recovery refusals (round 4 Stage A, round 5 T2)
+have in common that several placeholders look identical except for the artifact id, while the successful recoveries
+(rounds 1 and 3, Stage B twice) had distinguishable circumstances; spec 4 names the replaced tool call in the
+placeholder to test that. Cost of the launch: 0.343 USD list-price incremental (the session cost state also carries the
+inherited 0.507 USD of the original).
+
 ## Not run (after round 4)
 
 V3 as a controlled cache experiment with equal reads, V5, V6, an image inside a rebuilt mixed message, a proactive

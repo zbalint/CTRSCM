@@ -319,6 +319,45 @@ test('marked calls bypass manual fallback and explain an absent transcript', asy
   ).toEqual({ skip: 'ctrscm: no transcript' })
   expect(beneath).toBe(0)
 })
+test('manual marked requests stay above the built-in compactor', async ($, on) => {
+  let beneath = 0
+  mock.env(on, { HOME: '/home/example' })
+  mock.clock(on, { now: Date.parse('2026-10-05T00:00:00.000Z') })
+  on('tool.register', ($, e) => ({ value: { tool: `mcp__ctrscm__${e.name}` } }))
+  on('command.register', ($, e) => ({ value: { command: e.name } }))
+  on('fs.write', () => ({ value: undefined }))
+  on('session.start', ($, e) => ({ cwd: e.cwd }))
+  on('session.compact', ($, e) => {
+    beneath += 1
+    return { messages: e.messages }
+  })
+  await $.session.start({ cwd: '/work', surface: null, isInteractive: false })
+
+  const marked = await $.session.compact({
+    trigger: 'manual',
+    instructions: AGGRESSIVE_MARK,
+    messages: proactiveMessages,
+  } as never)
+  if (!('messages' in marked) || marked.messages === undefined) {
+    throw new Error('expected a marked rewritten transcript')
+  }
+  expect(marked.messages[2]).toEqual(expect.objectContaining({
+    toolResults: [expect.objectContaining({ text: expect.stringContaining(PLACEHOLDER_PREFIX) })],
+  }))
+  expect(marked.messages[4]).toEqual(expect.objectContaining({
+    toolResults: [expect.objectContaining({ text: expect.stringContaining(PLACEHOLDER_PREFIX) })],
+  }))
+  expect(beneath).toBe(0)
+
+  expect(
+    await $.session.compact({
+      trigger: 'manual',
+      instructions: 'summarize the tests',
+      messages: proactiveMessages,
+    } as never),
+  ).toEqual({ messages: proactiveMessages })
+  expect(beneath).toBe(1)
+})
 test('aggressive and proactive marked passes use their distinct protected tails', async ($, on) => {
   let beneath = 0
   const logs: string[] = []

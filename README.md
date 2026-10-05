@@ -75,6 +75,8 @@ All options are strings in the plugin configuration. Defaults:
 | `cooldownTurns` | `3` | Changed-context measurements between proactive requests. |
 | `aggressiveProtectTokens` | `4000` | Estimated recent context protected by `/shake`. |
 
+`triggerPercent` is a percentage of the model's full context window (for example 200k), not of the engine's automatic compaction window; the engine's own automatic compaction can fire first when its window is smaller (for example `CLAUDE_CODE_AUTO_COMPACT_WINDOW=100000`), in which case the compaction still runs through Shake but not as a proactive request; set `triggerTokens` several thousand tokens (more than one turn's growth) below the engine's threshold when the proactive request should come first. Recovery pages default to 8000 characters and have a maximum of 20000 characters.
+
 ## Commands
 
 - `/shake` queues an aggressive Shake pass for the next completed turn. It does not compact

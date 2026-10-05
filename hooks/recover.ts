@@ -3,18 +3,18 @@ import { isArtifactId, readPage } from './artifacts'
 
 export const RECOVER_NAME = 'recover'
 export const RECOVER_DESCRIPTION =
-  'CTRSCM placeholders name an artifact id. Use this tool to recover the original tool-result text in bounded pages.'
+  'Read back the exact original text of a tool result that CTRSCM replaced with a placeholder of the form [CTRSCM shaken tool result: ... id="<id>"]. The text is not lost. When you need any detail from such a result, call this tool with that id instead of re-running the original tool, guessing, or asking the person to repeat it. Results are returned in pages: start with maxChars 8000 or less, and use offset to read further pages only when the header says more: true.'
 export const RECOVER_SCHEMA = {
   type: 'object',
   properties: {
     id: { type: 'string' },
     offset: { type: 'integer', minimum: 0 },
-    maxChars: { type: 'integer', minimum: 1, maximum: 100000 },
+    maxChars: { type: 'integer', minimum: 1, maximum: 20000 },
   },
   required: ['id'],
 } as const
-export const DEFAULT_PAGE_CHARS = 20000
-export const MAX_PAGE_CHARS = 100000
+export const DEFAULT_PAGE_CHARS = 8000
+export const MAX_PAGE_CHARS = 20000
 
 type RecoverInput = {
   id?: unknown
@@ -38,7 +38,7 @@ export async function recoverResult(
       !Number.isInteger(input.maxChars) ||
       input.maxChars < 1 ||
       input.maxChars > MAX_PAGE_CHARS)
-  ) return { deny: 'invalid maxChars' }
+  ) return { deny: 'invalid maxChars (1 to 20000)' }
 
   const offset = input.offset ?? 0
   const maxChars = input.maxChars ?? DEFAULT_PAGE_CHARS

@@ -27,7 +27,7 @@ Status: the running list of open items. It is a tracker, not a design: a decisio
 | B11 | Live V4 (2026-10-05, CLI 2.1.289, Haiku): after `--resume` of a shaken session the model reported it could not see the placeholders (no recovery call), although the session JSONL holds both rebuilt placeholder entries after the compact boundary. Engine context loss vs model perception unresolved. V1 and V7 passed live (artifacts byte-equal, model called recover unprompted). Next: a resumed run whose prompt includes a recovery request naming the id, or inspect the provider-bound context; V2, V3, V5, V6 not run | reported |
 | B12 | Steer recovery toward small pages: in the round 3 measurement the model asked for `maxChars` 100000 and re-inflated context by a whole result (+9033 cache-write tokens); consider description wording or a lower page ceiling, then re-measure | reported |
 | B13 | `/shake` runs at the next turn end, not at once (the host refuses compaction from a command hook); revisit if the engine allows it | code |
-| B14 | Live checks L1 to L4 from spec 2 section 11, and the 100k-token Shake versus built-in comparison (docs/verification.md round 4) | docs |
+| B14 | Remaining live gaps from round 4: L3 (a proactive request that skips: notice and cooldown), built-in Q4/Q5 and an equal-read repeat of the 100k comparison, a Stage A style recovery refusal that did not reproduce (model told the person to reread with five placeholders; add a hint to the recover tool description or the placeholder only if it recurs) | reported |
 
 ## Closed
 

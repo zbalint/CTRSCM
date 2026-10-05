@@ -9,6 +9,7 @@ findings dispositioned in section 12.
 **Scope.** May create or edit exactly these files and no others:
 
 - `.claude-plugin/plugin.json`, `hooks/hooks.json`
+- `package.json`, `package-lock.json`, `tsconfig.json` (the typecheck gate, section 13)
 - `hooks/register.ts`, `hooks/config.ts`, `hooks/shake.ts`, `hooks/artifacts.ts`, `hooks/recover.ts`
 - `tests/register.test.ts`, `tests/config.test.ts`, `tests/shake.test.ts`, `tests/artifacts.test.ts`,
   `tests/recover.test.ts`, and `tests/fixtures/*.ts` (one export per file)
@@ -16,8 +17,9 @@ findings dispositioned in section 12.
   findings only)
 
 Does not touch: `AGENTS.md`, `docs/intent.md`, `docs/architecture.md`, `docs/specs/*`, `.gitignore`,
-`LICENSE`, `.gitattributes`, `a2amx.toml`, anything outside the repository. No `package.json`, no
-`node_modules`, no `tsconfig.json`, no build step, no new dependency. Do not commit, stage or merge:
+`LICENSE`, `.gitattributes`, `a2amx.toml`, anything outside the repository. No
+build step and no dependency other than the one dev dependency `typescript` (section 13). `node_modules/` and
+`types/` are gitignored and are not deliverables. Do not commit, stage or merge:
 leave the diff uncommitted in the working tree.
 
 **Location and branch:** main checkout `/home/zbalint/workspace/CTRSCM`, branch `develop`.
@@ -305,9 +307,9 @@ beneath `session.compact` hook record that it was called and return a recognizab
 Proactive compaction (`turn.complete`); a `/shake` or status command; elision of fenced or XML blocks in prose;
 image or mixed-content handling beyond the rule that only `toolResults` text is replaced; artifact cleanup or
 expiry; Windows paths; exact token counting; any change to `AGENTS.md`, `docs/architecture.md` or other specs;
-a typecheck or build setup; a live (non-test) run of Claude Code, which belongs to a later tester assignment
+a build or bundling step; a live (non-test) run of Claude Code, which belongs to a later tester assignment
 (open items V1 to V7 in `docs/architecture.md`). Adjacent temptations to refuse: splitting the five modules
-further, adding a `package.json`, an options UI, or logging tool-result bodies.
+further, adding runtime dependencies, an options UI, or logging tool-result bodies.
 
 ## 11. Acceptance
 
@@ -315,11 +317,12 @@ Run from `/home/zbalint/workspace/CTRSCM` after implementation (all require the 
 time; feasibility was checked against the reference mod and the throwaway probe):
 
 ```sh
+. ~/.nvm/nvm.sh && npm ci && npx tsc -p tsconfig.json   # exit 0, no output (section 13)
 claude plugin validate . --strict          # exit 0, "Validation passed"
 claude plugin test .                       # exit 0, 0 fail, every test in section 9 present
 rg -n "node:|: any\b|as any|eval\(|import\(" hooks tests   # no output
 rg -n "as never" hooks                                       # no output (the cast seam exists only in tests)
-git status --short                         # only files named in section 0 (README.md, docs/backlog.md, .claude-plugin/, hooks/, tests/)
+git status --short                         # only files named in section 0 (README.md, docs/backlog.md, .claude-plugin/, hooks/, tests/, package.json, package-lock.json, tsconfig.json)
 ```
 
 Further bars: the defaults in `plugin.json`, `DEFAULT_CONFIG`, and section 3 are identical (compare the three);
@@ -346,5 +349,43 @@ F8 example fields made explicit, answered-call `text` and `result` added to prov
 cast scan reduced to `as never` in `hooks` plus a review read (a regex cannot tell a cast from prose); F10 the
 `toolUses` text scan removed in favor of the fixture test; F11 test seams for `tool.register` and `ui.log` added
 and probed; F12 deep equality in `register` tests; F13 `tool.call` dispatch probed and its form stated. Not
-adopted: none. Left open on purpose: typecheck gate (no Node on the machine; backlog B9) and live behavior
-(architecture V1 to V7).
+adopted: none. Left open on purpose: live behavior (architecture V1 to V7). The typecheck gate, first deferred for
+lack of Node, was added by Amendment 1 (section 13) the same day, after its own probe.
+
+## 13. Amendment 1: typecheck gate (2026-10-05, before assignment)
+
+Origin: the owner installed Node (nvm, v24.21.0, WSL). Probe by the architect, outside the repository: a plugin with
+`tsconfig.json` below and `typescript` 5.9.3 typechecks against `types/claude-code.d.ts`, including the `claude-code`
+and `claude-code/testing` modules and `as never` casts; its only errors were `console` calls, which the runtime
+does not provide (so the compiler also enforces "no console"). This amendment supersedes the earlier "no
+`package.json`/`tsconfig.json`" and "no typecheck" sentences, edited in place in sections 0, 10 and 11.
+
+- `tsconfig.json`, exactly:
+
+```json
+{
+  "compilerOptions": {
+    "target": "es2023",
+    "lib": ["es2023"],
+    "types": [],
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "noEmit": true,
+    "skipLibCheck": true
+  },
+  "include": ["types", "hooks", "tests"]
+}
+```
+
+- `package.json`: `name` `ctrscm`, `version` `0.1.0`, `private` true, `devDependencies` `{ "typescript": "^5" }`, and
+  nothing else (no scripts, no runtime dependencies). `package-lock.json` comes from `npm install`.
+- Node is installed with nvm, so a non-login shell needs `. ~/.nvm/nvm.sh &&` before `node`, `npm` or `npx`
+  (`AGENTS.md` says so). `types/claude-code.d.ts` is already present in the working tree (gitignored; copied from the
+  reference clone's `mods/types/claude-code.d.ts`; `/plugin-types` writes the same file). The developer does not
+  create or edit it; if it is missing, stop and report.
+- Acceptance: `. ~/.nvm/nvm.sh && npm ci && npx tsc -p tsconfig.json` exits 0 with no output, in addition to the
+  other commands in section 11. Every type error is a defect to fix in the code, never a reason to add `any`, a cast
+  other than `as never` in tests or `as const`, or `// @ts-` directives (`rg -n "@ts-" hooks tests` has no output).
+

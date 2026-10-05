@@ -25,8 +25,9 @@ Status: the running list of open items. It is a tracker, not a design: a decisio
 | B6 | Windows path behavior in `$.fs` (v1 targets Linux and WSL) | docs |
 | B7 | Image or mixed-content safety if V2 shows a rebuilt user message loses non-text blocks | docs |
 | B8 | Exact token counts if the engine ever exposes a counter | docs |
-| B9 | Typecheck gate: `package.json` with `typescript`, `tsconfig.json` modelled on `mods/tsconfig.json`, `tsc -p` in AGENTS.md commands; needs Node in WSL (not installed on 2026-10-05) | manual |
 
 ## Closed
 
-None yet.
+| ID | Item | Closed by |
+| --- | --- | --- |
+| B9 | Typecheck gate (Node installed 2026-10-05; probe passed) | spec 1 amendment 1 (section 13) |

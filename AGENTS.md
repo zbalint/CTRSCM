@@ -15,13 +15,14 @@ Run all of these before calling a change done; they must pass with no warnings:
 ```sh
 claude plugin validate . --strict
 claude plugin test .
+. ~/.nvm/nvm.sh && npx tsc -p tsconfig.json
 ```
 
 - To try the mod live: `claude --plugin-dir .` (early access: hooks modules load only
   where function hooks are enabled, and the API may change between releases).
-- There is no TypeScript compiler on this machine, so there is no typecheck gate. Write
-  types as if one ran (`strict`, `noUncheckedIndexedAccess`) and import engine types
-  with `import type … from 'claude-code'`.
+- Typecheck: `. ~/.nvm/nvm.sh && npm ci && npx tsc -p tsconfig.json` (Node comes from nvm,
+  so a non-login shell must source it first). Import engine types with
+  `import type … from 'claude-code'`; no `@ts-` directives.
 - `types/` holds the engine's declarations (`/plugin-types` writes them) and is
   gitignored. The reference copy is `mods/types/claude-code.d.ts` in the
   `anthropics/claude-code` repository.

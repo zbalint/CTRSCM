@@ -63,6 +63,36 @@ What to tune first:
 - `artifactDir` defaults to `$HOME/.ctrscm/artifacts`. Artifacts are plain copies of the shaken tool output (they can
   hold anything a tool printed, including secrets) and nothing deletes them; remove old directories by hand.
 
+## Example configurations
+
+Only the options you change need to be listed (see "Configuring it" for the file shape). **Run live** means the exact values
+were used in a live test (`docs/verification.md`); the others are reasoned from the option meanings and not run.
+
+| Goal | Options | Status |
+| --- | --- | --- |
+| Defaults (proactive at 50% of the model window, normal tail) | none | partly run: the defaults were exercised by the 100k comparison with `triggerTokens` added |
+| Only shake when Claude Code compacts (no proactive requests) | `"autoShake": "off"` | not run; the compaction path itself was run |
+| Proactive request just before the engine's own automatic compaction | `"triggerTokens": "<engine threshold minus several thousand>"` | run with `"70000"` against an engine window of 100k tokens; the engine still compacted first once (see below) |
+| Heavy tool output, reclaim more per pass | `"protectTokens": "8000", "minSavings": "2000"` | not run |
+| Careful: keep more of the recent conversation | `"protectTokens": "30000", "minSavings": "8000"` | not run |
+| Never summarize unprompted, never fall back to the built-in summarizer on a failed pass | `"fallback": "skip"` | skip answer run in unit tests; not run live |
+| Low-threshold test rig (fires after about six file reads) | `"triggerTokens": "45000", "triggerPercent": "90", "cooldownTurns": "2", "protectTokens": "3000", "minSavings": "1000", "aggressiveProtectTokens": "500"` | run live (rounds 4 and 6) |
+| Long-session experiment with the engine window at its minimum | launch with `CLAUDE_CODE_AUTO_COMPACT_WINDOW=100000` and `"triggerTokens": "70000", "triggerPercent": "90", "cooldownTurns": "3"` | run live (round 4 Stage B) |
+
+## Claude Code's own threshold
+
+What is known:
+
+- The engine's automatic compaction window can be lowered with the environment variable `CLAUDE_CODE_AUTO_COMPACT_WINDOW`; the
+  documented minimum is 100000 tokens (checked by the tester against the Claude Code documentation).
+- Measured with the window set to 100000: the engine's automatic compaction ran at 71253 and 71010 tokens (first compaction)
+  and 67064 and 67116 tokens (second) in two sessions. So with that setting it fires roughly 29k to 33k tokens below the window.
+- For the default window (the model's own limit, for example 200k) the threshold was **not measured**; no test ran long enough.
+- The engine reports the figure itself: `$.session.usage({ breakdown: "summary" })` returns `autoCompactThreshold` (the token count
+  at which automatic compaction runs, absent when it is off) and `isAutoCompactEnabled` (declarations, `SessionContextBreakdown`).
+  CTRSCM does not read them yet. Making the proactive trigger relative to that figure (for example "this many tokens below the
+  engine's threshold") would remove the guesswork in the table above; it is a candidate for the next spec.
+
 ## Commands
 
 - `/ctrscm` prints the configuration in effect, the artifact directory, this session's totals (passes, results shaken,

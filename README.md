@@ -79,6 +79,8 @@ All options are strings in the plugin configuration. Defaults:
 
 ## Commands
 
+A shaken result's placeholder names the tool call it replaced (the tool name and a short hint such as the file path or command start) next to the artifact id.
+
 - `/shake` queues an aggressive Shake pass for the next completed turn. It does not compact
   from inside its own command hook.
 - `/ctrscm` prints the current thresholds, artifact root, session totals, last outcome and

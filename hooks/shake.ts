@@ -3,11 +3,14 @@ import type { Config } from './config'
 
 export const RECOVER_TOOL = 'mcp__ctrscm__recover'
 export const PLACEHOLDER_PREFIX = '[CTRSCM shaken tool result:'
+// shortcut: the fixed 40-token estimate can overstate savings by at most about 40 estimated tokens per result; upgrade when minResultTokens drops below about 78 or an exact token counter exists.
 export const PLACEHOLDER_TOKEN_ESTIMATE = 40
+const LABEL_HINT_KEYS = ['file_path', 'path', 'command', 'pattern', 'url', 'query', 'description'] as const
 
 export type Selected = {
   toolUseId: string
   toolName: string | undefined
+  label: string | undefined
   text: string
   tokens: number
 }
@@ -16,9 +19,39 @@ export function estimateTokens(text: string): number {
   return Math.ceil(text.length / 4)
 }
 
-export function placeholderOf(id: string, chars: number, tokens: number): string {
-  return `[CTRSCM shaken tool result: ~${tokens} estimated tokens (${chars} chars) externalized; recover with mcp__ctrscm__recover id="${id}"]`
+export function placeholderOf(id: string, chars: number, tokens: number, label?: string): string {
+  const labeled = label === undefined ? '' : `${label}, `
+  return `[CTRSCM shaken tool result: ${labeled}~${tokens} estimated tokens (${chars} chars) externalized; recover with mcp__ctrscm__recover id="${id}"]`
 }
+
+function cleanLabelPart(value: string): string {
+  return value.replace(/[\p{Cc}\p{Cf}]/gu, ' ').replace(/\s+/gu, ' ').trim()
+}
+
+export function labelOf(
+  tool: string | undefined,
+  input: Record<string, unknown> | undefined,
+): string | undefined {
+  try {
+    if (tool === undefined) return undefined
+    const cleanedTool = cleanLabelPart(tool)
+    if (cleanedTool === '') return undefined
+    let hint: string | undefined
+    for (const key of LABEL_HINT_KEYS) {
+      const value = input?.[key]
+      if (typeof value !== 'string') continue
+      const cleaned = cleanLabelPart(value).replaceAll('"', "'").replaceAll(']', ')')
+      if (cleaned === '') continue
+      const codePoints = Array.from(cleaned)
+      hint = codePoints.length > 80 ? `${codePoints.slice(0, 80).join('').trim()}...` : cleaned
+      break
+    }
+    return hint === undefined ? cleanedTool : `${cleanedTool} ${hint}`
+  } catch {
+    return undefined
+  }
+}
+
 export function hasImage(value: unknown): boolean {
   const visit = (current: unknown, depth: number): boolean => {
     if (typeof current !== 'object' || current === null) return false
@@ -50,10 +83,12 @@ export function selectResults(
   messages: readonly SessionMessage[],
   settings: Pick<Config, 'protectTokens' | 'minSavings' | 'minResultTokens' | 'protectedTools'>,
 ): { selected: Selected[]; savings: number } {
-  const toolNames = new Map<string, string>()
+  const toolCalls = new Map<string, { tool: string; input: Record<string, unknown> }>()
   for (const message of messages) {
     if (message.role !== 'assistant') continue
-    for (const toolUse of message.toolUses) toolNames.set(toolUse.tool_use_id, toolUse.tool)
+    for (const toolUse of message.toolUses) {
+      toolCalls.set(toolUse.tool_use_id, { tool: toolUse.tool, input: toolUse.input })
+    }
   }
 
   const costs = messages.map((message) => {
@@ -78,7 +113,8 @@ export function selectResults(
     if ((message.toolResults ?? []).some((result) => hasImage(result.result))) continue
     for (const result of message.toolResults ?? []) {
       const tokens = estimateTokens(result.text)
-      const toolName = toolNames.get(result.tool_use_id)
+      const toolCall = toolCalls.get(result.tool_use_id)
+      const toolName = toolCall?.tool
       if (
         result.text.length === 0 ||
         result.isError ||
@@ -88,7 +124,13 @@ export function selectResults(
         tokens < settings.minResultTokens ||
         tokens <= PLACEHOLDER_TOKEN_ESTIMATE
       ) continue
-      selected.push({ toolUseId: result.tool_use_id, toolName, text: result.text, tokens })
+      selected.push({
+        toolUseId: result.tool_use_id,
+        toolName,
+        label: labelOf(toolName, toolCall?.input),
+        text: result.text,
+        tokens,
+      })
     }
   }
 

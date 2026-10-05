@@ -188,7 +188,7 @@ export function register(on: On, options: PluginOptions): void {
           },
           selected.text,
         )
-        placeholders.set(selected.toolUseId, placeholderOf(id, selected.text.length, selected.tokens))
+        placeholders.set(selected.toolUseId, placeholderOf(id, selected.text.length, selected.tokens, selected.label))
         written += 1
       }
     } catch (error) {

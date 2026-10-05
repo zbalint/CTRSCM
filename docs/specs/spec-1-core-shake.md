@@ -4,7 +4,8 @@
 
 > Amended by spec 3 (`docs/specs/spec-3-recovery-steering.md`): the recovery tool description, `DEFAULT_PAGE_CHARS` (now 8000),
 > `MAX_PAGE_CHARS` (now 20000) and the `invalid maxChars` deny text (now `invalid maxChars (1 to 20000)`). Sections 3 and 7 below keep
-> the original values as the historical record.
+> the original values as the historical record. Spec 4 (`docs/specs/spec-4-placeholder-label.md`) adds an optional tool-call label to the placeholder
+> (section 3 keeps the unlabeled text, which `placeholderOf` still produces without a label).
 
 **LOCKED** (2026-10-05, pre-lock gate run; notes in section 12). The owner delegated every design choice to the
 architect; decisions are D1 to D9 in section 2. Consultant review: a2amx `m_482` (context `ctrscm-core-shake`), all

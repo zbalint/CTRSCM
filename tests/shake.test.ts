@@ -7,6 +7,7 @@ import {
   estimateTokens,
   hasImage,
   placeholderOf,
+  labelOf,
   rebuild,
   selectResults,
 } from '../hooks/shake'
@@ -76,6 +77,24 @@ test('estimateTokens and placeholderOf use the contract literals', () => {
   ).toBe(
     '[CTRSCM shaken tool result: ~20000 estimated tokens (80000 chars) externalized; recover with mcp__ctrscm__recover id="artifact-id"]',
   )
+  expect(
+    placeholderOf('artifact-id', 80000, 20000, 'Bash ls'),
+  ).toBe(
+    '[CTRSCM shaken tool result: Bash ls, ~20000 estimated tokens (80000 chars) externalized; recover with mcp__ctrscm__recover id="artifact-id"]',
+  )
+})
+test('labelOf uses the first cleaned input hint without throwing', () => {
+  expect(labelOf('Read', { file_path: '/work/a.ts', offset: 1 })).toBe('Read /work/a.ts')
+  expect(labelOf('Bash', { command: 'git log\n  --oneline  -5' })).toBe('Bash git log --oneline -5')
+  expect(labelOf('mcp__x__find', { n: 3 })).toBe('mcp__x__find')
+  expect(labelOf('Bash', { command: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' })).toBe('Bash aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa')
+  expect(labelOf('Bash', { command: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' })).toBe('Bash aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa...')
+  expect(labelOf('Grep', { command: '   ', pattern: 'TODO' })).toBe('Grep TODO')
+  expect(labelOf('Grep', { file_path: '/work/a.ts', command: 'ls' })).toBe('Grep /work/a.ts')
+  expect(labelOf('Grep', { command: 'say "done"]' })).toBe("Grep say 'done')")
+  expect(labelOf('Bash\u202e', { command: 'git\u001b log\u202e --oneline' })).toBe('Bash git log --oneline')
+  expect(labelOf('Read', { input: '/work/a.ts' })).toBe('Read')
+  expect(labelOf(undefined, { command: 'ls' })).toBeUndefined()
 })
 
 test('hasImage detects image blocks and conservative base64 records', () => {
@@ -109,7 +128,29 @@ test('an image-bearing user result protects its whole message', () => {
 
 test('worked example selects the old Bash result and computes literal savings', () => {
   expect(selectResults(workedExample, settings)).toEqual({
-    selected: [{ toolUseId: 'tu1', toolName: 'Bash', text: large, tokens: 20000 }],
+    selected: [{ toolUseId: 'tu1', toolName: 'Bash', label: 'Bash ls', text: large, tokens: 20000 }],
+    savings: 19960,
+  })
+})
+test('selection labels every eligible call and leaves absent calls unlabeled', () => {
+  expect(selectResults(workedExample, { ...settings, protectTokens: 0 })).toEqual({
+    selected: [
+      { toolUseId: 'tu1', toolName: 'Bash', label: 'Bash ls', text: large, tokens: 20000 },
+      { toolUseId: 'tu2', toolName: 'Read', label: 'Read /work/a.ts', text: large, tokens: 20000 },
+    ],
+    savings: 39920,
+  })
+  const missingCall: SessionMessage[] = [
+    {
+      role: 'user',
+      text: '',
+      toolUses: [],
+      toolResults: [{ tool_use_id: 'missing', text: large, isError: false }],
+    },
+    { role: 'assistant', text: 'x'.repeat(64000), toolUses: [] },
+  ]
+  expect(selectResults(missingCall, { ...settings, protectTokens: 0 })).toEqual({
+    selected: [{ toolUseId: 'missing', toolName: undefined, label: undefined, text: large, tokens: 20000 }],
     savings: 19960,
   })
 })
@@ -151,7 +192,7 @@ test('errors, protected tools, recovery, placeholders and short results are excl
     { role: 'user', text: '', toolUses: [], toolResults: [{ tool_use_id: 'unknown', text: large, isError: false }] },
     { role: 'assistant', text: 'x'.repeat(64000), toolUses: [] },
   ]
-  expect(selectResults(messages, settings)).toEqual({ selected: [{ toolUseId: 'unknown', toolName: 'Unknown', text: large, tokens: 20000 }], savings: 19960 })
+  expect(selectResults(messages, settings)).toEqual({ selected: [{ toolUseId: 'unknown', toolName: 'Unknown', label: 'Unknown', text: large, tokens: 20000 }], savings: 19960 })
 })
 
 test('rebuild only changes user messages containing selected results', () => {

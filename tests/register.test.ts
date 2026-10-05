@@ -77,6 +77,10 @@ test('session start registers recovery, auto compaction writes artifacts, and re
     throw new Error('expected a rewritten transcript')
   }
   const compactedMessages = compacted.messages
+  const manifestPath = writes[1]?.path
+  if (manifestPath === undefined) throw new Error('missing artifact manifest write')
+  const artifactId = manifestPath.split('/').at(-2)
+  if (artifactId === undefined || !isArtifactId(artifactId)) throw new Error('invalid artifact id')
   expect(compactedMessages).toHaveLength(messages.length)
   expect(compactedMessages[0]).toEqual(messages[0])
   expect(compactedMessages[1]).toEqual(messages[1])
@@ -87,15 +91,11 @@ test('session start registers recovery, auto compaction writes artifacts, and re
     toolUses: [],
     toolResults: [{
       tool_use_id: 'tu1',
-      text: expect.stringContaining(PLACEHOLDER_PREFIX),
+      text: `[CTRSCM shaken tool result: Bash ls, ~20000 estimated tokens (80000 chars) externalized; recover with mcp__ctrscm__recover id="${artifactId}"]`,
       isError: false,
     }],
   })
   const chunkPath = writes[0]?.path
-  const manifestPath = writes[1]?.path
-  if (chunkPath === undefined || manifestPath === undefined) throw new Error('missing artifact writes')
-  const artifactId = manifestPath.split('/').at(-2)
-  if (artifactId === undefined || !isArtifactId(artifactId)) throw new Error('invalid artifact id')
   expect(chunkPath).toBe(`/home/example/.ctrscm/artifacts/${artifactId}/chunk-0000.txt`)
   expect(manifestPath).toBe(`/home/example/.ctrscm/artifacts/${artifactId}/manifest.json`)
   expect(writes).toHaveLength(2)

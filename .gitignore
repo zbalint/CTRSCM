@@ -1,1 +1,5 @@
 /a2amx.toml
+/types/
+/node_modules/
+*.swp
+.DS_Store

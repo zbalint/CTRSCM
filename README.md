@@ -12,12 +12,14 @@ a summarizer.
 
 ## Status
 
-Spec 1 (core Shake, artifact store and recovery tool) is implemented and tested.
+Spec 2 (proactive Shake, `/shake`, `/ctrscm`, image-safe selection) is implemented and tested.
 
-- The plugin validates strictly; the mock-based suite covers config, selection, chunked artifacts,
-  recovery pages and registered hook fallbacks.
+- The plugin validates strictly; the mock-based suite covers configuration, proactive thresholds,
+  cooldowns, command queues, status output, image safety, chunked artifacts, recovery pages and
+  registered hook fallbacks.
 - Live interactive behavior remains open verification work listed in
-  [docs/architecture.md](docs/architecture.md) (V1–V7).
+  [docs/specs/spec-2-proactive-shake.md](docs/specs/spec-2-proactive-shake.md) (L1–L4) and
+  [docs/verification.md](docs/verification.md).
 - Mods are early access: hooks modules load only where function hooks are enabled, and the
   API may change between releases without notice.
 
@@ -39,19 +41,46 @@ Claude Code's built-in compaction whenever Shake cannot safely make enough progr
 
 ## Trying it
 
-The core Shake implementation is available from this repository:
+The Shake implementation is available from this repository:
 
 ```sh
 claude --plugin-dir .
 ```
 
-Then `/compact`, or let the engine compact at its threshold. Tests and manifest validation:
+Then use `/shake` to queue an aggressive pass for the next turn, or `/compact` to run the
+configured compaction behavior. Proactive Shake requests run after a changed-context measurement
+when a configured threshold is reached. Tests and manifest validation:
 
 ```sh
 claude plugin validate . --strict
 claude plugin test .
 . ~/.nvm/nvm.sh && npx tsc -p tsconfig.json
 ```
+
+## Options
+
+All options are strings in the plugin configuration. Defaults:
+
+| Option | Default | Meaning |
+| --- | --- | --- |
+| `protectTokens` | `16000` | Estimated recent context protected from ordinary Shake. |
+| `minSavings` | `4000` | Minimum estimated savings required to apply Shake. |
+| `minResultTokens` | `200` | Minimum estimated result size eligible for externalization. |
+| `protectedTools` | `Skill` | Comma-separated tools whose results stay in the transcript. |
+| `artifactDir` | empty | Artifact root; empty uses `$HOME/.ctrscm/artifacts`. |
+| `fallback` | `builtin` | Use built-in compaction or skip when Shake is not applied. |
+| `autoShake` | `on` | Enable proactive threshold requests. |
+| `triggerPercent` | `50` | Context percentage threshold. |
+| `triggerTokens` | `0` | Context token threshold; `0` disables this threshold. |
+| `cooldownTurns` | `3` | Changed-context measurements between proactive requests. |
+| `aggressiveProtectTokens` | `4000` | Estimated recent context protected by `/shake`. |
+
+## Commands
+
+- `/shake` queues an aggressive Shake pass for the next completed turn. It does not compact
+  from inside its own command hook.
+- `/ctrscm` prints the current thresholds, artifact root, session totals, last outcome and
+  whether an aggressive request is pending.
 
 ## Contributing
 

@@ -1,8 +1,9 @@
 import { expect, mock, test } from 'claude-code/testing'
-import type { SessionMessage } from 'claude-code'
+import type { SessionMeasureInput, SessionMessage } from 'claude-code'
 import { isArtifactId } from '../hooks/artifacts'
 import { PLACEHOLDER_PREFIX, RECOVER_TOOL } from '../hooks/shake'
-
+import { AGGRESSIVE_MARK, PROACTIVE_MARK } from '../hooks/trigger'
+import { commandRunInput } from './fixtures/commandRunInput'
 const large = 'x'.repeat(80000)
 const messages: SessionMessage[] = [
   { role: 'user', text: 'start', toolUses: [], toolResults: [], handle: 'm0' },
@@ -41,6 +42,10 @@ const twoSelectedMessages: SessionMessage[] = [
   ...messages,
   { role: 'assistant', text: large, toolUses: [] },
 ]
+const proactiveMessages: SessionMessage[] = [
+  ...messages,
+  { role: 'assistant', text: 'x'.repeat(40000), toolUses: [] },
+]
 test('session start registers recovery, auto compaction writes artifacts, and recovery reads them', async ($, on) => {
   const writes: Array<{ path: string; text: string }> = []
   const files = new Map<string, string>()
@@ -48,6 +53,7 @@ test('session start registers recovery, auto compaction writes artifacts, and re
   mock.env(on, { HOME: '/home/example' })
   mock.clock(on, { now: Date.parse('2026-10-05T00:00:00.000Z') })
   on('tool.register', ($, e) => ({ value: { tool: `mcp__ctrscm__${e.name}` } }))
+  on('command.register', ($, e) => ({ value: { command: e.name } }))
   on('fs.write', ($, e) => {
     writes.push({ path: e.path, text: e.text })
     files.set(e.path, e.text)
@@ -131,6 +137,7 @@ test('failed recovery registration and artifact root use the builtin fallback', 
   on('tool.register', () => {
     throw new Error('registration unavailable')
   })
+  on('command.register', ($, e) => ({ value: { command: e.name } }))
   on('ui.log', ($, e) => {
     logs.push(e.text)
     return { value: undefined }
@@ -151,6 +158,7 @@ test('successful registration without HOME falls back without rewriting', async 
   let beneath = 0
   mock.env(on, {})
   on('tool.register', ($, e) => ({ value: { tool: `mcp__ctrscm__${e.name}` } }))
+  on('command.register', ($, e) => ({ value: { command: e.name } }))
   on('session.start', ($, e) => ({ cwd: e.cwd }))
   on('session.compact', ($, e) => {
     beneath += 1
@@ -158,6 +166,14 @@ test('successful registration without HOME falls back without rewriting', async 
   })
   await $.session.start({ cwd: '/work', surface: null, isInteractive: false })
   expect(await $.session.compact({ trigger: 'auto', messages } as never)).toEqual({ messages })
+  expect(beneath).toBe(1)
+  expect(
+    await $.session.compact({
+      trigger: 'plugin',
+      instructions: PROACTIVE_MARK,
+      messages,
+    } as never),
+  ).toEqual({ skip: 'ctrscm: artifact root unavailable' })
   expect(beneath).toBe(1)
 })
 
@@ -168,6 +184,7 @@ test('a later artifact write failure falls back after leaving only orphaned chun
   mock.env(on, { HOME: '/home/example' })
   mock.clock(on, { now: Date.parse('2026-10-05T00:00:00.000Z') })
   on('tool.register', ($, e) => ({ value: { tool: `mcp__ctrscm__${e.name}` } }))
+  on('command.register', ($, e) => ({ value: { command: e.name } }))
   on('fs.write', ($, e) => {
     writes.push(e.path)
     if (e.path.endsWith('/manifest.json')) {
@@ -192,6 +209,338 @@ test('a later artifact write failure falls back after leaving only orphaned chun
   expect(writes[2]).toContain('/chunk-0000.txt')
   expect(writes[3]).toContain('/manifest.json')
   expect(logs[0]).toContain('CTRSCM: artifact write failed after 1 artifacts')
+})
+
+test('session measure registers commands, triggers proactive Shake, and reports status', async ($, on) => {
+  const logs: string[] = []
+  const commands: string[] = []
+  mock.env(on, { HOME: '/home/example' })
+  on('tool.register', ($, e) => ({ value: { tool: `mcp__ctrscm__${e.name}` } }))
+  on('command.register', ($, e) => {
+    commands.push(e.name)
+    return { value: { command: e.name } }
+  })
+  on('ui.log', ($, e) => {
+    logs.push(e.text)
+    return { value: undefined }
+  })
+  on('session.start', ($, e) => ({ cwd: e.cwd }))
+  on('session.measure', ($, e) => ({ changed: e.changed }))
+
+  await $.session.start({ cwd: '/work', surface: null, isInteractive: false })
+  expect(commands).toEqual(['shake', 'ctrscm'])
+  expect(
+    await $.session.measure({
+      context: { window: 200000, tokens: 150000, percent: 75 },
+      rateLimits: [],
+      changed: ['context'],
+    }),
+  ).toEqual({ changed: ['context'] })
+  expect(logs).toEqual(['CTRSCM: requesting proactive shake (context 75%)'])
+  const status = await $.command.run(commandRunInput('ctrscm'))
+  expect(status.text).toContain('last: proactive skipped: no transcript')
+})
+
+test('session measure ignores unrelated changes and honors the proactive cooldown', async ($, on) => {
+  const logs: string[] = []
+  mock.env(on, { HOME: '/home/example' })
+  on('tool.register', ($, e) => ({ value: { tool: `mcp__ctrscm__${e.name}` } }))
+  on('command.register', ($, e) => ({ value: { command: e.name } }))
+  on('ui.log', ($, e) => {
+    logs.push(e.text)
+    return { value: undefined }
+  })
+  on('session.start', ($, e) => ({ cwd: e.cwd }))
+  on('session.measure', ($, e) => ({ changed: e.changed }))
+  await $.session.start({ cwd: '/work', surface: null, isInteractive: false })
+
+  await $.session.measure({
+    context: { window: 200000, percent: 75 },
+    rateLimits: [],
+    changed: ['rateLimits'],
+  })
+  expect(logs).toEqual([])
+  const measurement: SessionMeasureInput = {
+    context: { window: 200000, percent: 75 },
+    rateLimits: [],
+    changed: ['context'],
+  }
+  await $.session.measure(measurement)
+  await $.session.measure(measurement)
+  await $.session.measure(measurement)
+  expect(logs).toEqual(['CTRSCM: requesting proactive shake (context 75%)'])
+  await $.session.measure(measurement)
+  expect(logs).toEqual(['CTRSCM: requesting proactive shake (context 75%)'])
+  await $.session.measure(measurement)
+  expect(logs).toEqual([
+    'CTRSCM: requesting proactive shake (context 75%)',
+    'CTRSCM: requesting proactive shake (context 75%)',
+  ])
+})
+
+test('shake command queues an aggressive pass for the next changed-context measure', async ($, on) => {
+  const logs: string[] = []
+  mock.env(on, { HOME: '/home/example' })
+  on('tool.register', ($, e) => ({ value: { tool: `mcp__ctrscm__${e.name}` } }))
+  on('command.register', ($, e) => ({ value: { command: e.name } }))
+  on('ui.log', ($, e) => {
+    logs.push(e.text)
+    return { value: undefined }
+  })
+  on('session.start', ($, e) => ({ cwd: e.cwd }))
+  on('session.measure', ($, e) => ({ changed: e.changed }))
+  await $.session.start({ cwd: '/work', surface: null, isInteractive: false })
+
+  expect(await $.command.run(commandRunInput('shake'))).toEqual({
+    text: 'CTRSCM: aggressive shake queued; it runs when the next turn completes',
+  })
+  await $.session.measure({
+    context: { window: 200000, percent: 1 },
+    rateLimits: [],
+    changed: ['context'],
+  })
+  expect(logs).toEqual(['CTRSCM: requesting aggressive shake'])
+  const status = await $.command.run(commandRunInput('ctrscm'))
+  expect(status.text).toContain('pending: none')
+  expect(status.text).toContain('last: aggressive skipped: no transcript')
+})
+
+test('marked calls bypass manual fallback and explain an absent transcript', async ($, on) => {
+  let beneath = 0
+  on('session.compact', ($, e) => {
+    beneath += 1
+    return { messages: e.messages }
+  })
+  expect(
+    await $.session.compact({
+      trigger: 'manual',
+      instructions: PROACTIVE_MARK,
+    } as never),
+  ).toEqual({ skip: 'ctrscm: no transcript' })
+  expect(beneath).toBe(0)
+})
+test('aggressive and proactive marked passes use their distinct protected tails', async ($, on) => {
+  let beneath = 0
+  const logs: string[] = []
+  mock.env(on, { HOME: '/home/example' })
+  mock.clock(on, { now: Date.parse('2026-10-05T00:00:00.000Z') })
+  on('tool.register', ($, e) => ({ value: { tool: `mcp__ctrscm__${e.name}` } }))
+  on('command.register', ($, e) => ({ value: { command: e.name } }))
+  on('fs.write', () => ({ value: undefined }))
+  on('session.compact', ($, e) => {
+    beneath += 1
+    return { messages: e.messages }
+  })
+  on('ui.log', ($, e) => {
+    logs.push(e.text)
+    return { value: undefined }
+  })
+  on('session.start', ($, e) => ({ cwd: e.cwd }))
+  await $.session.start({ cwd: '/work', surface: null, isInteractive: false })
+
+  const aggressive = await $.session.compact({
+    trigger: 'plugin',
+    instructions: AGGRESSIVE_MARK,
+    messages: twoSelectedMessages,
+  } as never)
+  if (!('messages' in aggressive) || aggressive.messages === undefined) {
+    throw new Error('expected an aggressive rewritten transcript')
+  }
+  expect(aggressive.messages[2]).toEqual(expect.objectContaining({
+    toolResults: [expect.objectContaining({ text: expect.stringContaining(PLACEHOLDER_PREFIX) })],
+  }))
+  expect(aggressive.messages[4]).toEqual(expect.objectContaining({
+    toolResults: [expect.objectContaining({ text: expect.stringContaining(PLACEHOLDER_PREFIX) })],
+  }))
+  expect(logs).toContain('CTRSCM: shook 2 tool results (~39920 estimated tokens)')
+  const proactive = await $.session.compact({
+    trigger: 'plugin',
+    instructions: PROACTIVE_MARK,
+    messages: proactiveMessages,
+  } as never)
+  if (!('messages' in proactive) || proactive.messages === undefined) {
+    throw new Error('expected a proactive rewritten transcript')
+  }
+  expect(proactive.messages[2]).toEqual(expect.objectContaining({
+    toolResults: [expect.objectContaining({ text: expect.stringContaining(PLACEHOLDER_PREFIX) })],
+  }))
+  expect(proactive.messages[4]).toEqual(proactiveMessages[4])
+  expect(logs).toContain('CTRSCM: shook 1 tool results (~19960 estimated tokens)')
+
+
+  const status = await $.command.run(commandRunInput('ctrscm'))
+  expect(status.text).toContain('this session: 2 passes, 3 results shaken, ~59880 estimated tokens saved')
+  expect(status.text).toContain('last: proactive shook 1 results (~19960 estimated tokens)')
+  expect(beneath).toBe(0)
+})
+
+test('an image-bearing marked message stays intact while another result shakes', async ($, on) => {
+  mock.env(on, { HOME: '/home/example' })
+  mock.clock(on, { now: Date.parse('2026-10-05T00:00:00.000Z') })
+  on('tool.register', ($, e) => ({ value: { tool: `mcp__ctrscm__${e.name}` } }))
+  on('command.register', ($, e) => ({ value: { command: e.name } }))
+  on('fs.write', () => ({ value: undefined }))
+  on('session.start', ($, e) => ({ cwd: e.cwd }))
+  await $.session.start({ cwd: '/work', surface: null, isInteractive: false })
+  const imageMessages: SessionMessage[] = messages.map((message, index) =>
+    index === 2
+      ? {
+          ...message,
+          toolResults: [
+            ...(message.toolResults ?? []),
+            {
+              tool_use_id: 'tu3',
+              text: '',
+              isError: false,
+              result: { type: 'image', source: { data: 'AAAA' } },
+            },
+          ],
+        }
+      : message,
+  )
+  const compacted = await $.session.compact({
+    trigger: 'plugin',
+    instructions: AGGRESSIVE_MARK,
+    messages: [...imageMessages, { role: 'assistant', text: 'x'.repeat(40000), toolUses: [] }],
+  } as never)
+  if (!('messages' in compacted) || compacted.messages === undefined) {
+    throw new Error('expected an image-safe rewritten transcript')
+  }
+  expect(compacted.messages[2]).toEqual(imageMessages[2])
+  expect(compacted.messages[4]).toEqual(expect.objectContaining({
+    toolResults: [expect.objectContaining({ text: expect.stringContaining(PLACEHOLDER_PREFIX) })],
+  }))
+})
+
+test('one command registration failure is logged without disabling recovery', async ($, on) => {
+  const logs: string[] = []
+  mock.env(on, { HOME: '/home/example' })
+  on('tool.register', ($, e) => ({ value: { tool: `mcp__ctrscm__${e.name}` } }))
+  on('command.register', ($, e) => {
+    if (e.name === 'shake') throw new Error('command unavailable')
+    return { value: { command: e.name } }
+  })
+  on('ui.log', ($, e) => {
+    logs.push(e.text)
+    return { value: undefined }
+  })
+  on('session.start', ($, e) => ({ cwd: e.cwd }))
+  await $.session.start({ cwd: '/work', surface: null, isInteractive: false })
+  expect(logs).toEqual(['CTRSCM: command registration failed: no implementation for command.register'])
+  expect(
+    await $.session.compact({
+      trigger: 'plugin',
+      instructions: PROACTIVE_MARK,
+      messages: [],
+    } as never),
+  ).toEqual({ skip: 'ctrscm: nothing worth shaking' })
+})
+
+test('marked calls skip without invoking the built-in fallback when nothing is eligible', async ($, on) => {
+  let beneath = 0
+  mock.env(on, { HOME: '/home/example' })
+  on('tool.register', ($, e) => ({ value: { tool: `mcp__ctrscm__${e.name}` } }))
+  on('command.register', ($, e) => ({ value: { command: e.name } }))
+  on('session.start', ($, e) => ({ cwd: e.cwd }))
+  on('session.compact', ($, e) => {
+    beneath += 1
+    return { messages: e.messages }
+  })
+  await $.session.start({ cwd: '/work', surface: null, isInteractive: false })
+  expect(
+    await $.session.compact({
+      trigger: 'plugin',
+      instructions: PROACTIVE_MARK,
+      messages: [],
+    } as never),
+  ).toEqual({ skip: 'ctrscm: nothing worth shaking' })
+  expect(beneath).toBe(0)
+})
+
+test('marked calls skip when eligible savings are below the configured minimum', async ($, on) => {
+  const belowMinSavings: SessionMessage[] = [
+    {
+      role: 'assistant',
+      text: '',
+      toolUses: [{ tool_use_id: 'small', tool: 'Bash', input: {} }],
+    },
+    {
+      role: 'user',
+      text: '',
+      toolUses: [],
+      toolResults: [{ tool_use_id: 'small', text: 'x'.repeat(804), isError: false }],
+    },
+    { role: 'assistant', text: 'x'.repeat(64000), toolUses: [] },
+  ]
+  let beneath = 0
+  mock.env(on, { HOME: '/home/example' })
+  on('tool.register', ($, e) => ({ value: { tool: `mcp__ctrscm__${e.name}` } }))
+  on('command.register', ($, e) => ({ value: { command: e.name } }))
+  on('session.start', ($, e) => ({ cwd: e.cwd }))
+  on('session.compact', ($, e) => {
+    beneath += 1
+    return { messages: e.messages }
+  })
+  await $.session.start({ cwd: '/work', surface: null, isInteractive: false })
+  expect(
+    await $.session.compact({
+      trigger: 'plugin',
+      instructions: PROACTIVE_MARK,
+      messages: belowMinSavings,
+    } as never),
+  ).toEqual({ skip: 'ctrscm: nothing worth shaking' })
+  expect(beneath).toBe(0)
+})
+
+test('shake command reports unavailable when recovery registration failed', async ($, on) => {
+  on('tool.register', () => {
+    throw new Error('registration unavailable')
+  })
+  on('command.register', ($, e) => ({ value: { command: e.name } }))
+  on('session.start', ($, e) => ({ cwd: e.cwd }))
+  await $.session.start({ cwd: '/work', surface: null, isInteractive: false })
+  expect(await $.command.run(commandRunInput('shake'))).toEqual({
+    text: 'CTRSCM: recovery tool unavailable; shake not queued',
+  })
+  expect(
+    await $.session.compact({
+      trigger: 'plugin',
+      instructions: PROACTIVE_MARK,
+      messages: [],
+    } as never),
+  ).toEqual({ skip: 'ctrscm: recovery tool not registered' })
+})
+
+test('marked artifact write failure returns its skip reason without calling beneath', async ($, on) => {
+  const logs: string[] = []
+  let beneath = 0
+  mock.env(on, { HOME: '/home/example' })
+  mock.clock(on, { now: Date.parse('2026-10-05T00:00:00.000Z') })
+  on('tool.register', ($, e) => ({ value: { tool: `mcp__ctrscm__${e.name}` } }))
+  on('command.register', ($, e) => ({ value: { command: e.name } }))
+  on('fs.write', ($, e) => {
+    if (e.path.endsWith('/chunk-0000.txt')) throw new Error('disk full')
+    return { value: undefined }
+  })
+  on('ui.log', ($, e) => {
+    logs.push(e.text)
+    return { value: undefined }
+  })
+  on('session.start', ($, e) => ({ cwd: e.cwd }))
+  on('session.compact', ($, e) => {
+    beneath += 1
+    return { messages: e.messages }
+  })
+  await $.session.start({ cwd: '/work', surface: null, isInteractive: false })
+  expect(
+    await $.session.compact({
+      trigger: 'plugin',
+      instructions: AGGRESSIVE_MARK,
+      messages,
+    } as never),
+  ).toEqual({ skip: 'ctrscm: artifact write failed' })
+  expect(logs).toEqual(['CTRSCM: artifact write failed after 0 artifacts: no implementation for fs.write'])
+  expect(beneath).toBe(0)
 })
 
 

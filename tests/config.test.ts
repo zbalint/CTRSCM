@@ -10,6 +10,11 @@ test('empty options retain the contract defaults', () => {
       protectedTools: ['Skill'],
       artifactDir: undefined,
       fallback: 'builtin',
+      autoShake: true,
+      triggerPercent: 50,
+      triggerTokens: 0,
+      cooldownTurns: 3,
+      aggressiveProtectTokens: 4000,
     },
     problems: [],
   })
@@ -33,6 +38,11 @@ test('numeric strings and option collections are parsed', () => {
       protectedTools: ['Skill', 'Read', 'Bash'],
       artifactDir: '/tmp/ctrscm',
       fallback: 'skip',
+      autoShake: true,
+      triggerPercent: 50,
+      triggerTokens: 0,
+      cooldownTurns: 3,
+      aggressiveProtectTokens: 4000,
     },
     problems: [],
   })
@@ -71,6 +81,11 @@ test('invalid numeric values keep defaults and report one problem each', () => {
     protectedTools: ['Skill'],
     artifactDir: undefined,
     fallback: 'builtin',
+    autoShake: true,
+    triggerPercent: 50,
+    triggerTokens: 0,
+    cooldownTurns: 3,
+    aggressiveProtectTokens: 4000,
   })
   expect(parsed.problems).toEqual([
     'option protectTokens: must be a safe integer at least 0; using the default',
@@ -78,6 +93,45 @@ test('invalid numeric values keep defaults and report one problem each', () => {
     'option minResultTokens: must be a safe integer at least 1; using the default',
   ])
 })
+
+test('autoShake accepts on/off strings and booleans', () => {
+  expect(parseConfig({ autoShake: 'off' }).config.autoShake).toBe(false)
+  expect(parseConfig({ autoShake: 'ON ' }).config.autoShake).toBe(true)
+  expect(parseConfig({ autoShake: false }).config.autoShake).toBe(false)
+  expect(parseConfig({ autoShake: 'later' })).toEqual({
+    config: { ...DEFAULT_CONFIG },
+    problems: ['option autoShake: must be "on" or "off"; using the default'],
+  })
+})
+
+test('proactive numeric options enforce their contract ranges', () => {
+  expect(
+    parseConfig({
+      triggerPercent: '99',
+      triggerTokens: '40000',
+      cooldownTurns: 0,
+      aggressiveProtectTokens: 123,
+    }).config,
+  ).toMatchObject({
+    triggerPercent: 99,
+    triggerTokens: 40000,
+    cooldownTurns: 0,
+    aggressiveProtectTokens: 123,
+  })
+  expect(parseConfig({ triggerPercent: '0' }).problems).toEqual([
+    'option triggerPercent: must be a safe integer from 1 to 99; using the default',
+  ])
+  expect(parseConfig({ triggerPercent: '100' }).problems).toEqual([
+    'option triggerPercent: must be a safe integer from 1 to 99; using the default',
+  ])
+  expect(parseConfig({ triggerPercent: 'abc' }).problems).toEqual([
+    'option triggerPercent: must be a safe integer from 1 to 99; using the default',
+  ])
+  expect(parseConfig({ cooldownTurns: '-1' }).problems).toEqual([
+    'option cooldownTurns: must be a safe integer at least 0; using the default',
+  ])
+})
+
 
 test('invalid fallback keeps builtin and reports one problem', () => {
   expect(parseConfig({ fallback: 'later' })).toEqual({

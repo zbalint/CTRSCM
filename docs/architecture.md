@@ -54,8 +54,11 @@ removing it often avoids a summary altogether.
 
 ## Design decisions (v1)
 
-- **Where it runs:** `session.compact` only. `precompute` answers `{ skip }` (documented as
-  computing and keeping nothing). No proactive compaction in v1.
+- **Where it runs:** `session.compact` (spec 1) and, from spec 2, a `session.measure` hook that asks
+  for a marked proactive compaction at a configurable threshold, with `/shake` and `/ctrscm` commands.
+  `precompute` answers `{ skip }` (documented as computing and keeping nothing). A marked request
+  never reaches the built-in summarizer. The host refuses `$.session.compact` from a `command.run`
+  hook, so `/shake` queues a request that runs at the next measure.
 - **Selection:** a tool result is eligible when it has text, sits outside the protected recent tail,
   is not an error, is not a protected tool, is not already a placeholder, and is large enough to save
   tokens. Defaults: protect 16,000 estimated tokens, require 4,000 estimated savings, minimum result

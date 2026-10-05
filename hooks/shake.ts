@@ -19,6 +19,32 @@ export function estimateTokens(text: string): number {
 export function placeholderOf(id: string, chars: number, tokens: number): string {
   return `[CTRSCM shaken tool result: ~${tokens} estimated tokens (${chars} chars) externalized; recover with mcp__ctrscm__recover id="${id}"]`
 }
+export function hasImage(value: unknown): boolean {
+  const visit = (current: unknown, depth: number): boolean => {
+    if (typeof current !== 'object' || current === null) return false
+    try {
+      if (
+        Object.prototype.hasOwnProperty.call(current, 'base64') ||
+        ('type' in current && current.type === 'image')
+      ) {
+        return true
+      }
+      if (depth >= 8) return false
+      if (
+        !Array.isArray(current) &&
+        Object.getPrototypeOf(current) !== Object.prototype &&
+        Object.getPrototypeOf(current) !== null
+      ) return false
+      for (const child of Object.values(current)) {
+        if (visit(child, depth + 1)) return true
+      }
+    } catch {
+      return false
+    }
+    return false
+  }
+  return visit(value, 0)
+}
 
 export function selectResults(
   messages: readonly SessionMessage[],
@@ -49,6 +75,7 @@ export function selectResults(
   for (let index = 0; index < messages.length; index += 1) {
     const message = messages[index]
     if (!message || message.role !== 'user' || (tail[index] ?? 0) < settings.protectTokens) continue
+    if ((message.toolResults ?? []).some((result) => hasImage(result.result))) continue
     for (const result of message.toolResults ?? []) {
       const tokens = estimateTokens(result.text)
       const toolName = toolNames.get(result.tool_use_id)

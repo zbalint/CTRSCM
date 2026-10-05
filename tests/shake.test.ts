@@ -5,6 +5,7 @@ import {
   PLACEHOLDER_TOKEN_ESTIMATE,
   RECOVER_TOOL,
   estimateTokens,
+  hasImage,
   placeholderOf,
   rebuild,
   selectResults,
@@ -76,6 +77,35 @@ test('estimateTokens and placeholderOf use the contract literals', () => {
     '[CTRSCM shaken tool result: ~20000 estimated tokens (80000 chars) externalized; recover with mcp__ctrscm__recover id="artifact-id"]',
   )
 })
+
+test('hasImage detects image blocks and conservative base64 records', () => {
+  expect(hasImage({ type: 'image' })).toBe(true)
+  expect(hasImage([{ nested: [{ type: 'image' }] }])).toBe(true)
+  expect(hasImage({ source: { base64: undefined } })).toBe(true)
+  expect(hasImage('image')).toBe(false)
+  expect(hasImage({ type: 'text', source: { data: 'AAAA' } })).toBe(false)
+})
+
+test('an image-bearing user result protects its whole message', () => {
+  const imageMessages: SessionMessage[] = workedExample.map((message, index) =>
+    index === 2
+      ? {
+          ...message,
+          toolResults: [
+            ...(message.toolResults ?? []),
+            {
+              tool_use_id: 'tu3',
+              text: '',
+              isError: false,
+              result: { type: 'image', source: { data: 'AAAA' } },
+            },
+          ],
+        }
+      : message,
+  )
+  expect(selectResults(imageMessages, settings)).toEqual({ selected: [], savings: 0 })
+})
+
 
 test('worked example selects the old Bash result and computes literal savings', () => {
   expect(selectResults(workedExample, settings)).toEqual({

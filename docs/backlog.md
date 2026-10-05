@@ -26,6 +26,7 @@ Status: the running list of open items. It is a tracker, not a design: a decisio
 | B7 | Image or mixed-content safety if V2 shows a rebuilt user message loses non-text blocks | docs |
 | B8 | Exact token counts if the engine ever exposes a counter | docs |
 | B10 | Registered-hook tests cannot inject custom `PluginOptions` (test API has no userConfig injection; inline wrappers fail the hook analyzer), so invalid parsed options and `fallback: skip` are covered only by pure `parseConfig` tests; revisit when the engine adds options injection to `claude plugin test` | code |
+| B11 | Live V4 (2026-10-05, CLI 2.1.289, Haiku): after `--resume` of a shaken session the model reported it could not see the placeholders (no recovery call), although the session JSONL holds both rebuilt placeholder entries after the compact boundary. Engine context loss vs model perception unresolved. V1 and V7 passed live (artifacts byte-equal, model called recover unprompted). Next: a resumed run whose prompt includes a recovery request naming the id, or inspect the provider-bound context; V2, V3, V5, V6 not run | reported |
 
 ## Closed
 

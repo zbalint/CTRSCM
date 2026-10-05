@@ -1,7 +1,7 @@
 {
   "name": "ctrscm",
   "version": "0.1.0",
-  "description": "Mechanically externalize old tool-result text during compaction while preserving conversation text and tool calls. Recover original output from paged local artifacts; fall back to built-in compaction when Shake cannot safely save enough context.",
+  "description": "Mechanically externalize old tool-result text during compaction while preserving conversation text and tool calls. Recover original output from paged local artifacts; fall back to built-in compaction when Shake cannot safely save enough context. The Shake idea comes from OMP (oh-my-pi, https://github.com/can1357/oh-my-pi) by Can Bölük, Mario Zechner and Stencil Labs, Inc.",
   "author": { "name": "zbalint" },
   "userConfig": {
     "protectTokens": { "type": "string", "title": "Protected recent context", "description": "Estimated tokens of recent context protected from Shake.", "required": false, "default": "16000" },

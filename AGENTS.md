@@ -95,5 +95,7 @@ These hold in every spec. A change that breaks one needs an owner decision.
 
 ## Public repository rules
 
+- Credit: the README `## Credits` section and the plugin description name OMP (oh-my-pi) and its authors as the source of the Shake idea. Keep them; extend them when more of OMP's behavior is adopted.
+
 Examples and fixtures use fictional names and paths (`/work`, `tool-a`, `example.invalid`).
 No personal data, no credentials, no content copied from private memory stores.

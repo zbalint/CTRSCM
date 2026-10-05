@@ -87,6 +87,17 @@ A shaken result's placeholder names the tool call it replaced (the tool name and
 - `/ctrscm` prints the current thresholds, artifact root, session totals, last outcome and
   whether an aggressive request is pending.
 
+## Credits
+
+Shake compaction is the idea of **OMP** (oh-my-pi), <https://github.com/can1357/oh-my-pi>, MIT licensed,
+copyright (c) 2025 Mario Zechner, (c) 2025-2026 Can Bölük, (c) 2026 Stencil Labs, Inc., and the
+oh-my-pi contributors. The design here follows OMP's Shake (`packages/agent/src/compaction/shake.ts`,
+read at commit `693fd6e12b`): mechanically replacing heavy old tool-result text with a short placeholder
+while keeping every message and tool call, an artifact the model can read back, the protected recent tail,
+the minimum-savings gate, the protected skill tool and the manual aggressive pass. CTRSCM is an independent
+TypeScript implementation for Claude Code Mods, written from a description of that behavior; it contains
+no OMP source code. Thank you to the OMP authors for the idea and for publishing it.
+
 ## Contributing
 
 Read [AGENTS.md](AGENTS.md) first. Work happens on `develop` or a feature branch.

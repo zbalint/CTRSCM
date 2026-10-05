@@ -33,6 +33,7 @@ Claude Code's built-in compaction whenever Shake cannot safely make enough progr
 
 | Document | Holds |
 | --- | --- |
+| [docs/usage.md](docs/usage.md) | How to enable, configure and observe the mod |
 | [docs/architecture.md](docs/architecture.md) | Design, verified API facts, open verification items |
 | [docs/specs/](docs/specs/) | Locked implementation specs |
 | [docs/backlog.md](docs/backlog.md) | Open items and ideas |

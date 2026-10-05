@@ -27,6 +27,9 @@ Status: the running list of open items. It is a tracker, not a design: a decisio
 | B11 | Live V4 and round 5 E1 (CLI 2.1.289, Haiku): the engine view of a forked, resumed shaken session still holds the placeholders (17 entries, 11 distinct ids) and recover by explicit id works, but the model quoted none in the first turn; the fork has no inherited compaction boundaries and replays the pre-compaction history, so the resumed context is large again; placeholder rows have no stored tool-result record. Open: a plain (non-fork) resume with the diagnostic, and an outgoing-payload capture; a string `result` on rebuilt entries is a candidate only after a live check | reported |
 | B13 | `/shake` runs at the next turn end, not at once (the host refuses compaction from a command hook); revisit if the engine allows it | code |
 | B14 | Remaining live gaps: L3 (a proactive request that skips: notice and cooldown), built-in Q4/Q5 and an equal-read repeat of the 100k comparison, a plain (non-fork) `--resume` of a shaken session with the diagnostic, how a person sets options persistently (only the temporary `--settings` route was run), longer sessions on the usual model | reported |
+| B15 | Persistent per-event usage log (one small JSON file per shake request: time, session id, kind, outcome, results, chars, estimated tokens saved; no tool-result text) so a trial period can be summed per session | owner request |
+| B16 | Report tool that joins the usage log with the session files (compaction tokens before and after, cache creation and read around each boundary) and prints per-session tokens reclaimed and the cache effect | owner request |
+| B17 | Persistent install: a local marketplace for the plugin so `claude plugin install` and `claude plugin configure` work; verify how options are stored | docs |
 
 ## Closed
 

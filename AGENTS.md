@@ -52,8 +52,9 @@ These hold in every spec. A change that breaks one needs an owner decision.
 - Recoverability beats savings: an artifact is committed (chunks, then manifest last)
   before any placeholder naming it is returned. An orphaned artifact is acceptable; an
   unrecoverable placeholder is not.
-- Any failure falls back (built-in compaction by default); a partially shaken
-  transcript is never returned.
+- Any failure falls back (built-in compaction by default; a proactive or `/shake` request leaves the
+  transcript untouched instead, because the built-in summarizer never runs unprompted); a partially
+  shaken transcript is never returned.
 - Never print or log tool-result bodies. Logs name counts and ids only.
 - Do not state an estimated token count as an exact one.
 
@@ -74,11 +75,13 @@ These hold in every spec. A change that breaks one needs an owner decision.
 
 | Module | Owns |
 | --- | --- |
-| `hooks/register.ts` | The `register(on, options)` entry; wires `session.start`, `session.compact`, and the recovery `tool.call` |
+| `hooks/register.ts` | The `register(on, options)` entry; wires `session.start`, `session.measure`, `session.compact`, `command.run` (`/shake`, `/ctrscm`) and the recovery `tool.call` |
 | `hooks/config.ts` | Parsing `PluginOptions` into a validated config with defaults |
 | `hooks/shake.ts` | Pure selection of eligible tool results, placeholders, token estimates, rebuilding messages |
 | `hooks/artifacts.ts` | Chunking, artifact write (chunks then manifest), manifest validation, paged read, over `$.fs` |
 | `hooks/recover.ts` | The recovery tool's name, schema and call handler |
+| `hooks/trigger.ts` | Pure proactive-trigger decision (thresholds, cooldown, pending `/shake`) and the request markers |
+| `hooks/status.ts` | Pure text of the `/ctrscm` status command |
 
 ## Documents
 

@@ -244,7 +244,9 @@ pending: aggressive shake
 Test seam additions (probed by the architect in a throwaway plugin, 2026-10-05): beneath the plugin answer
 `on("session.measure", ($, e) => ({ changed: e.changed }))`, `on("command.register", () => ({ value: { command: "x" } }))`,
 and for `command.run` dispatch `on("command.run", () => ({ text: "core" }))`. `$.session.measure({ context: { window: 200000, tokens:
-150000, percent: 75 }, rateLimits: [], changed: ["context"] })` and `$.command.run({ command: "shake" })` need no casts.
+150000, percent: 75 }, rateLimits: [], changed: ["context"] })` needs no cast; `$.command.run` takes the full `CommandRunInput` (Amendment 1), supplied without a cast by the fixture
+`tests/fixtures/commandRunInput.ts` (one export, `commandRunInput(command: string)`, returning `{ command, args: "", origin: { kind:
+"composer" }, presentation: { isFullscreen: false, columns: 80 } }`).
 The casts allowed are unchanged (`as never` on the dispatch of `$.session.compact` and `$.tool.call`, tests only).
 
 ## 9. Out of scope
@@ -301,3 +303,15 @@ B2/B4; F2 worked example made literal (transcript W); F3 and F4 literal transcri
 D5 wording; F7 log line added to section 3; F8 wording "non-whitespace instructions"; F9 AGENTS.md invariant reworded by
 the architect (owner delegated design; flagged in the owner report); F10 literal status block in section 8; F11 note
 in D8; F12 `HOME` lookup rejection covered. Not adopted: none. Left open on purpose: live behavior L1 to L4 (section 11).
+
+## 13. Amendment 1: `$.command.run` input in tests (2026-10-05, after BLOCKED m_522)
+
+Origin: the developer reported that `$.command.run({ command: "shake" })` does not typecheck: in `types/claude-code.d.ts` the
+test-side `$.command.run` takes `CommandRunInput` (lines 1483 to 1509), which requires `args`, `origin` and `presentation`.
+Verified by the architect with a throwaway typecheck (`tsc` error TS2345, missing `args, origin, presentation`). The
+original claim "need no casts" came from a probe that itself used `as never`, which hid the error; `$.session.measure(...)`
+as written in section 8 was re-verified to typecheck without a cast. Ruling: the cast list stays closed (`as never` only on the
+dispatch of `$.session.compact` and `$.tool.call`); tests build the complete input through the fixture named in section 8. The
+sentence in section 8 is edited in place; the fixture file is already inside section 0's `tests/fixtures/*.ts`. Gate re-run
+for this amendment: `rg -n "need no casts" docs/specs/spec-2-proactive-shake.md` has no hits; no other section states the
+`$.command.run` call form.

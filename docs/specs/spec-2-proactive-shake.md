@@ -313,5 +313,5 @@ original claim "need no casts" came from a probe that itself used `as never`, wh
 as written in section 8 was re-verified to typecheck without a cast. Ruling: the cast list stays closed (`as never` only on the
 dispatch of `$.session.compact` and `$.tool.call`); tests build the complete input through the fixture named in section 8. The
 sentence in section 8 is edited in place; the fixture file is already inside section 0's `tests/fixtures/*.ts`. Gate re-run
-for this amendment: `rg -n "need no casts" docs/specs/spec-2-proactive-shake.md` has no hits; no other section states the
-`$.command.run` call form.
+for this amendment: `rg -n "need no casts" docs/specs/spec-2-proactive-shake.md` hits only the quotation above; no other section states
+the `$.command.run` call form except section 8's behavior list, which names no call signature.

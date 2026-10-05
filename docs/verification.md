@@ -187,7 +187,52 @@ have in common that several placeholders look identical except for the artifact 
 placeholder to test that. Cost of the launch: 0.343 USD list-price incremental (the session cost state also carries the
 inherited 0.507 USD of the original).
 
-## Not run (after round 4)
+## Round 6: specs 3 and 4 together (labeled placeholders, smaller recovery pages)
+
+Code: commit `9cd07d2`. Question: with several same-size placeholders present, does the model recover the right
+artifact for a named file, in small pages? (Rounds 4 and 5 had two refusals with identical-looking placeholders and
+`maxChars` 100000 in every call.) Two fresh interactive Haiku 4.5 launches (CLI 2.1.289), different fixture seeds
+(61 and 62), eight files of 240 rows (21840 bytes) each, 1920 unique 8-character fixture values per seed, truth maps
+kept outside the model's reach (deny-read rules for the truth directory and the private session directory in the
+temporary settings; fixture files only in `--add-dir`); no engine compaction-window override.
+Options: `autoShake` on, `triggerTokens` 45000, `triggerPercent` 90, `cooldownTurns` 2, `protectTokens` 3000,
+`minSavings` 1000, `minResultTokens` 200, `aggressiveProtectTokens` 500, `fallback` builtin, a temporary
+`artifactDir` per launch. Launch shape as above plus `--session-id <fresh uuid>`. Script per launch, one prompt per
+turn: `/ctrscm`; read files 1 to 6 with one `Read` call each (reply only the row count); then three recall questions
+that never name the tool ("exact fixture value on row R of <file>, do not reread, reply only the value"): file 2 row
+12, file 4 row 173 (deep row), file 5 row 90; `/ctrscm`; `/cost`; `/exit`.
+
+Both launches: the proactive request fired by itself after the sixth read (context 26%): 51346 to 7207 tokens in 73 ms
+and 51595 to 7207 tokens in 58 ms; 5 results shaken each (~28170 estimated tokens); one compaction boundary each (the
+session file labels it `manual`); no built-in summarization, no hook error. Each placeholder is 222 characters and names
+the full read path.
+
+| Launch | Question | Right artifact, right answer | recover calls | offset | maxChars | Chars returned |
+| --- | --- | --- | ---: | --- | --- | ---: |
+| 1 | file 2 row 12 | yes / yes | 1 | omitted | 8000 | 8000 |
+| 1 | file 4 row 173 | yes / yes | 1 | 16000 | 8000 | 6696 |
+| 1 | file 5 row 90 | yes / yes | 1 | 8000 | 8000 | 8000 |
+| 2 | file 2 row 12 | yes / yes | 1 | omitted | omitted (default 8000) | 8000 |
+| 2 | file 4 row 173 | yes / yes | 1 | 0 | 20000 | 20000 |
+| 2 | file 5 row 90 | yes / yes | 1 | 0 | 20000 | 20000 |
+
+Artifact ids were checked two ways (the label in the placeholder, and byte equality of the stored chunks with the
+original `Read` result): 6 of 6 correct among five same-size placeholders; no refusal, no source `Read`, no tool error.
+Four of six calls used pages of 8000 characters or less; launch 1 jumped straight to the right offset for deeper rows,
+launch 2 asked for the 20000 maximum from offset 0 (about 88% of a 22696-character result). The 8000-first preference
+in the description is therefore followed inconsistently.
+
+| Launch | List-price total | API time | Cache read | Cache creation |
+| --- | ---: | ---: | ---: | ---: |
+| 1 | 0.1942 USD | 29.5 s | 423586 | 70015 |
+| 2 | 0.1980 USD | 31.1 s | 441176 | 70719 |
+
+Reading: the previous failure mode (refusal with identical-looking placeholders, whole-result pages) did not appear in six
+questions. Both the label and the new description changed at once, the seeds, questions and contexts differ from earlier
+rounds, and the sample is six questions on one model, so the effect of each change cannot be separated and no general
+rate is claimed. The 20000 limit's deny path and resumed-session placeholder perception were not exercised.
+
+## Not run (after round 6)
 
 V3 as a controlled cache experiment with equal reads, V5, V6, an image inside a rebuilt mixed message, a proactive
-request that skips (L3), built-in Q4 and Q5.
+request that skips (L3), built-in Q4 and Q5, a plain (non-fork) `--resume` of a shaken session, a persistent install.

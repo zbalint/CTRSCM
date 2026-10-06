@@ -276,3 +276,20 @@ Reported by the owner and read from `/ctrscm` output on 2026-10-06; not a script
 | Effective values | trigger 99% or 150000 tokens, cooldown 3 turns, advice at 300000, protect 20000, aggressive protect 4000, min savings 4000, min result 200, protected tools `Skill`, usage log on |
 
 Caveats: the values were not compared with the file's contents (the file was not read), and no shake pass ran in this check. Not exercised: how the engine's option UI renders `fallback`, `autoShake` and `usageLog` now that the manifest defaults are gone (spec 9 removed them).
+
+## Round 9: spec 10 and live proactive passes, owner's session
+
+Reported by the owner and read from `/ctrscm` and `/ctrscm report` output on 2026-10-06; not a scripted launch. The mod was loaded from `~/.mods/CTRSCM` at `5174de1` (default model, 1M window, options from the config file: trigger 99% or 150000 tokens, cooldown 3 turns, advice 300000, protect 20000, min savings 4000).
+
+| Observation | Result |
+| --- | --- |
+| Spec 10 | `context: 65207 tokens (7% of 1000000)` and `engine compaction: auto at 967000 tokens`; after a pass `context: not measured yet` until the next response |
+| Proactive pass 1 | fired after the context passed 150k: 6 results, ~49811 estimated tokens saved; real median prompt per turn 194123 before, 114562 after (3 turns each side), ~79.6k real |
+| Proactive pass 2 | 6 results, ~64615 estimated; real median prompt 335901 before, 115742 after (3 turns before, 1 after), ~220k real |
+| Cache | first turn after: 88274 (pass 1) and 92272 (pass 2) cache-creation tokens against 4166 and 1945 on a normal turn before; session list-price cost ~1.29 USD before pass 2, ~2.20 after the turn that followed it |
+| Break-even | at assumed list-price ratios (write 1.25x, read 0.1x, not checked for the model): ~11 turns for pass 1, ~5 for pass 2 |
+| Session after passes | continued without a built-in summary and without a hook error; the status line read `2 passes, 12 results shaken` |
+
+Findings: the estimate undercounts real tokens (1.6x and 3.4x, code and type declarations; B27). A single turn of large reads passed the trigger by ~190k tokens because the trigger runs at a turn's end (B26).
+Caveats: one session, one model, medians over 1 to 3 turns, "before" medians may mix turns of different size, the pass cost is not separable from the turn it landed in, and the transcript notice lines were not checked.
+Closes B25. Not exercised: L3 (a proactive request that skips), a plain `--resume` of a shaken session, advice at 300k, a prose-heavy session.

@@ -120,7 +120,7 @@ Live (an owner session where a measurement arrives mid-turn, the usage log shows
 
 F1 adopted in section 5 (rejection seam or live check). F2 adopted: D3 does not restore `isPending`; B22 wording corrected earlier. F3 adopted: D3 resets `cooldown` after the attempt.
 F4 adopted by design: the measure path still tries at once (D1). F5 open: whether a compaction at `turn.complete` is accepted is the premise of D2 and D3 and rests on the host's own message;
-live probe before lock (section 11). F6 adopted: D4. F7a not adopted (section 6), F7b adopted (D2). F8 adopted: line numbers and missing cases in section 5. F9: numbering gap closed by this section.
+live probe before lock, done (section 10). F6 adopted: D4. F7a not adopted (section 6), F7b adopted (D2). F8 adopted: line numbers and missing cases in section 5. F9: numbering gap closed by this section.
 
 ## 10. Pre-lock evidence
 

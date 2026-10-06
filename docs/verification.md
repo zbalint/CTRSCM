@@ -232,7 +232,35 @@ questions. Both the label and the new description changed at once, the seeds, qu
 rounds, and the sample is six questions on one model, so the effect of each change cannot be separated and no general
 rate is claimed. The 20000 limit's deny path and resumed-session placeholder perception were not exercised.
 
+## Round 7: spec 5 (usage log, advice) and the owner's settings file
+
+Code: commit `7d0e79c`, Claude Code 2.1.290, Haiku 4.5. Two launches; the second made no model call.
+
+Launch 1 (interactive, one session): `autoShake` on, `triggerTokens` 62000, `triggerPercent` 99, `adviseTokens` 40000, `cooldownTurns` 2,
+`protectTokens` 3000, `minSavings` 1000, `minResultTokens` 200, `aggressiveProtectTokens` 500, `usageLog` on, `fallback` builtin, a temporary
+`artifactDir`; ten fixture files (240 rows, 21840 bytes, 2400 unique fixture values, seed 71); explicit `--session-id`; one `Read` per turn.
+
+| Observation | Result |
+| --- | --- |
+| Advice | one, after read 5: context 44456 tokens (22%) with `adviseTokens` 40000; none after reads 6 and 7 (cooldown) |
+| Proactive shake | after read 8: context 65633 tokens (33%) at the 62000 trigger; 7 results, 158872 characters, ~39438 estimated tokens; boundary 65671 to 7483 tokens in 66 ms; no advice in that measurement, as specified |
+| Usage files | 2, both valid JSON with exactly the 16 documented keys; names match `{timestamp}-{uuid}.json`; session id equals the launch's `--session-id`; timestamps ordered |
+| Shake event vs artifacts | `results` 7, `chars` 158872, 7 artifact ids all match the manifests and chunk lengths (each 22696 characters, exact copies of the `Read` result) |
+| Privacy | all 2400 truth values searched in every usage file: 0 matches; no fixture path or label |
+| Placeholders | 7, each 203 characters, labeled with tool and path |
+| Recovery | 2 of 2 correct, right artifact each time: row 12 (offset omitted, `maxChars` 8000 default) and row 173 (offset 15000, `maxChars` 7000); no source rereads |
+| Errors | no hook error, no broken turn, no repeated skip notice |
+| Cost | 0.2394 USD list price, 20 provider messages, API time 60.1 s |
+
+Launch 2 (the owner's `docs/examples/ctrscm-150k.json`, `/ctrscm` then `/exit`, no model call): `auto: on (trigger 99% or 150000 tokens, 0 = off; cooldown 3
+turns)`, `advice: at 250000 tokens, 0 = off`, protect 16000, aggressive protect 4000, min savings 4000, min result 200, usage log on under the default artifact root.
+
+Caveats: one model-active session, two recall questions, Haiku only, native memory active, shared account cache. Defaults (120000 / 150000 / on) were checked in the code, not in a launch.
+Not exercised: advice repeating after the cooldown, `adviseTokens` 0, `usageLog` off, an unwritable log, a rejected `HOME` lookup, contexts above 150k tokens, a proactive pass that skips.
+Compaction replays informational messages under new ids, so the raw session file shows duplicate old advice and request lines; the usage files show a single advice event.
+
 ## Not run (after round 6)
 
 Any model with a 1M-token window (all live runs used Haiku 4.5 with a 200k window), sessions near 150k tokens or more, V3 as a controlled cache experiment with equal reads, V5, V6, an image inside a rebuilt mixed message, a proactive
-request that skips (L3), built-in Q4 and Q5, a plain (non-fork) `--resume` of a shaken session, a persistent install.
+request that skips (L3), built-in Q4 and Q5, a plain (non-fork) `--resume` of a shaken session, a persistent install, advice repeating after cooldown,
+`usageLog` off, an unwritable log.

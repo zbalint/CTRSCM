@@ -19,7 +19,7 @@ export type Config = {
 export const DEFAULT_CONFIG: Config = {
   protectTokens: 16000,
   minSavings: 4000,
-  minResultTokens: 200,
+  minResultTokens: 1000,
   protectedTools: ['Skill'],
   artifactDir: undefined,
   fallback: 'builtin',

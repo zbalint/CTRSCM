@@ -21,7 +21,7 @@ export function estimateTokens(text: string): number {
 
 export function placeholderOf(id: string, chars: number, tokens: number, label?: string): string {
   const labeled = label === undefined ? '' : `${label}, `
-  return `[CTRSCM shaken tool result: ${labeled}~${tokens} estimated tokens (${chars} chars) externalized; recover with mcp__ctrscm__recover id="${id}"]`
+  return `[CTRSCM shaken tool result: ${labeled}~${tokens} estimated tokens (${chars} chars) externalized; before quoting details, recover the full text with mcp__ctrscm__recover id="${id}"]`
 }
 
 function cleanLabelPart(value: string): string {

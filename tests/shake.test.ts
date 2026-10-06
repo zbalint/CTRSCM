@@ -75,12 +75,12 @@ test('estimateTokens and placeholderOf use the contract literals', () => {
   expect(
     placeholderOf('artifact-id', 80000, 20000),
   ).toBe(
-    '[CTRSCM shaken tool result: ~20000 estimated tokens (80000 chars) externalized; recover with mcp__ctrscm__recover id="artifact-id"]',
+    '[CTRSCM shaken tool result: ~20000 estimated tokens (80000 chars) externalized; before quoting details, recover the full text with mcp__ctrscm__recover id="artifact-id"]',
   )
   expect(
     placeholderOf('artifact-id', 80000, 20000, 'Bash ls'),
   ).toBe(
-    '[CTRSCM shaken tool result: Bash ls, ~20000 estimated tokens (80000 chars) externalized; recover with mcp__ctrscm__recover id="artifact-id"]',
+    '[CTRSCM shaken tool result: Bash ls, ~20000 estimated tokens (80000 chars) externalized; before quoting details, recover the full text with mcp__ctrscm__recover id="artifact-id"]',
   )
 })
 test('labelOf uses the first cleaned input hint without throwing', () => {
@@ -130,6 +130,34 @@ test('worked example selects the old Bash result and computes literal savings', 
   expect(selectResults(workedExample, settings)).toEqual({
     selected: [{ toolUseId: 'tu1', toolName: 'Bash', label: 'Bash ls', text: large, tokens: 20000 }],
     savings: 19960,
+  })
+})
+test('minResultTokens includes the exact boundary and rejects one estimated token below it', () => {
+  const boundaryMessages: SessionMessage[] = [
+    { role: 'assistant', text: '', toolUses: [{ tool_use_id: 'exact', tool: 'Bash', input: {} }] },
+    {
+      role: 'user',
+      text: '',
+      toolUses: [],
+      toolResults: [{ tool_use_id: 'exact', text: 'x'.repeat(800), isError: false }],
+    },
+    { role: 'assistant', text: '', toolUses: [{ tool_use_id: 'below', tool: 'Bash', input: {} }] },
+    {
+      role: 'user',
+      text: '',
+      toolUses: [],
+      toolResults: [{ tool_use_id: 'below', text: 'x'.repeat(796), isError: false }],
+    },
+  ]
+  expect(
+    selectResults(boundaryMessages, {
+      ...settings,
+      protectTokens: 0,
+      minSavings: 0,
+    }),
+  ).toEqual({
+    selected: [{ toolUseId: 'exact', toolName: 'Bash', label: 'Bash', text: 'x'.repeat(800), tokens: 200 }],
+    savings: 160,
   })
 })
 test('selection labels every eligible call and leaves absent calls unlabeled', () => {

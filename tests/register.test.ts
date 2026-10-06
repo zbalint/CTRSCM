@@ -93,7 +93,7 @@ test('session start registers recovery, auto compaction writes artifacts, and re
     toolUses: [],
     toolResults: [{
       tool_use_id: 'tu1',
-      text: `[CTRSCM shaken tool result: Bash ls, ~20000 estimated tokens (80000 chars) externalized; recover with mcp__ctrscm__recover id="${artifactId}"]`,
+      text: `[CTRSCM shaken tool result: Bash ls, ~20000 estimated tokens (80000 chars) externalized; before quoting details, recover the full text with mcp__ctrscm__recover id="${artifactId}"]`,
       isError: false,
     }],
   })

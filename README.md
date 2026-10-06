@@ -66,7 +66,7 @@ All options are strings in the plugin configuration. Defaults:
 | --- | --- | --- |
 | `protectTokens` | `16000` | Estimated recent context protected from ordinary Shake. |
 | `minSavings` | `4000` | Minimum estimated savings required to apply Shake. |
-| `minResultTokens` | `200` | Minimum estimated result size eligible for externalization. |
+| `minResultTokens` | `1000` | Minimum estimated result size eligible for externalization. |
 | `protectedTools` | `Skill` | Comma-separated tools whose results stay in the transcript. |
 | `artifactDir` | empty | Artifact root; empty uses `$HOME/.ctrscm/artifacts`. |
 | `fallback` | `builtin` | Use built-in compaction or skip when Shake is not applied. |

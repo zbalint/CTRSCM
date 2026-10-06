@@ -6,7 +6,7 @@ test('empty options retain the contract defaults', () => {
     config: {
       protectTokens: 16000,
       minSavings: 4000,
-      minResultTokens: 200,
+      minResultTokens: 1000,
       protectedTools: ['Skill'],
       artifactDir: undefined,
       fallback: 'builtin',
@@ -81,7 +81,7 @@ test('invalid numeric values keep defaults and report one problem each', () => {
   expect(parsed.config).toEqual({
     protectTokens: 16000,
     minSavings: 4000,
-    minResultTokens: 200,
+    minResultTokens: 1000,
     protectedTools: ['Skill'],
     artifactDir: undefined,
     fallback: 'builtin',

@@ -14,7 +14,7 @@ test('statusText renders the complete active status block', () => {
     'CTRSCM status\n' +
       'auto: on (trigger 50% or 120000 tokens, 0 = off; cooldown 3 turns)\n' +
       'advice: at 150000 tokens, 0 = off\n' +
-      'shake: protect 16000, aggressive protect 4000, min savings 4000, min result 200 (estimated tokens)\n' +
+      'shake: protect 16000, aggressive protect 4000, min savings 4000, min result 1000 (estimated tokens)\n' +
       'protected tools: Skill\n' +
       'artifacts: /home/example/.ctrscm/artifacts\n' +
       'usage log: on (/home/example/.ctrscm/artifacts/usage)\n' +
@@ -36,7 +36,7 @@ test('statusText renders unavailable and disabled settings', () => {
     'CTRSCM status\n' +
       'auto: off (trigger 50% or 120000 tokens, 0 = off; cooldown 3 turns)\n' +
       'advice: at 150000 tokens, 0 = off\n' +
-      'shake: protect 16000, aggressive protect 4000, min savings 4000, min result 200 (estimated tokens)\n' +
+      'shake: protect 16000, aggressive protect 4000, min savings 4000, min result 1000 (estimated tokens)\n' +
       'protected tools: none\n' +
       'artifacts: unavailable (no HOME)\n' +
       'usage log: on (unavailable (no HOME))\n' +

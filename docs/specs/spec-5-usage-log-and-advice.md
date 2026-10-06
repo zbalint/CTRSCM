@@ -38,7 +38,7 @@ that suit large windows. The report tool that reads the log is a later spec.
   instructions), `auto` or `plugin` compaction: shook, skipped, fallback or failed. Not for `precompute`, and not for a `manual`
   compaction with non-whitespace instructions (those go to the built-in summarizer untouched). An `advice` event is written when advice is shown (D4).
 - **D3.** A failed log write never affects a compaction: one `$.ui.log` line `CTRSCM: usage log write failed: {message}` and
-  nothing else. No retry. With no artifact root (no `HOME` and no `artifactDir`, or a rejected `HOME` lookup) no event is written and nothing is logged; root failures therefore leave no record, a known gap
+  nothing else. No retry. With no artifact root (no `HOME` and no `artifactDir`, or a rejected `HOME` lookup) no event is written and no `usage log write failed` line is logged; a REJECTED `HOME` lookup is still reported once with spec 1's line `CTRSCM: artifact root lookup failed: {message}` (an error is never swallowed silently; Amendment 1), and an unset `HOME` logs nothing as before; root failures leave no record in the log, a known gap
   for the report spec. The event is written after the compaction outcome is decided and, for an unmarked call that will call `next(e)`, BEFORE that call (the built-in summarizer can run for tens of seconds and may reject).
 - **D4.** Advice: when the context stays at or above `adviseTokens` and this measurement made no Shake request, the mod shows a toast
   and writes a `$.ui.log` line recommending `/compact` or a new session, at most once per `cooldownTurns` measurements. It never
@@ -192,7 +192,7 @@ pure tests only.
     a marked call on a below-`minSavings` transcript writes `skipped` / `nothing worth shaking` and never calls the layer beneath; an unmarked `auto` compaction on that transcript takes the default `builtin` fallback and writes
     `fallback` / `nothing worth shaking` (the event write is observed before the layer beneath returns: have the beneath hook record the number of event writes seen when it runs, expected 1); a `manual` compaction with
     instructions `summarize` writes no event; `precompute` writes no event; a rejected event `fs.write` (artifact writes succeed) logs `CTRSCM: usage log write failed: ` once and the returned `{ messages }` is unchanged; with no
-    `HOME` (and `artifactDir` unset) no event is written and no usage-log line is logged.
+    `HOME` (and `artifactDir` unset) no event is written and nothing is logged; with a rejected `HOME` lookup no event is written and exactly one line `CTRSCM: artifact root lookup failed: ` plus the message is logged, in the compaction hook and in the measure advice path alike.
 
 ## 9a. `README.md`
 
@@ -235,3 +235,11 @@ cooldown 3 and advice cooldown 3 (M2 request cooldown 2, M3 1 advises, M4 0, M5 
 
 Consultant review (`m_573`), dispositions: F1 existing register tests need the beneath answers and adjusted counts (section 9); F2 the 149999 case replaced by the sequence that avoids a proactive request (section 9, M2); F3 root skip removed from the mapping and D3 states root failures leave no record; F4 full path/outcome table in section 8, fallback events written before `next(e)`, unmarked reasons record the underlying cause,
 unmarked write failure is `fallback`; F5 literal advice event and sequence, shake event with no prior measure so context figures are null, `at` source stated; F6 stale-figure note in D7; F7 old-assertion locations listed; F8 trailing slash handled in `statusText`; the 200k-window note added to the README (section 9a). Not adopted: none. Left open on purpose: the report tool, the engine-relative trigger, live behavior (advice shown and event files on disk, verified by a tester afterwards).
+
+## 13. Amendment 1: a rejected HOME lookup is still logged (2026-10-06, architect review of the first implementation)
+
+Origin: the developer removed spec 1's `CTRSCM: artifact root lookup failed: {message}` log line from `session.compact` (and the new event helper swallows the rejection), reading D3 ("nothing is logged")
+as covering the lookup error. That reading removes a locked spec 1/2 behavior ("a rejected `HOME` lookup (logged as in spec 1)", spec 2 section 7) and conflicts with `AGENTS.md` ("never swallow an error silently").
+D3's "nothing is logged" meant no usage-log line. Ruling: the lookup error is logged exactly once per lookup with the spec 1 line, everywhere the mod resolves the root
+(the compaction hook, and the event helper in the measure paths); an unset or empty `HOME` (no rejection) logs nothing; neither case writes an event. D3 and the last test bullet in section 9 are edited in place.
+Gate re-run for the amendment: `rg -n "nothing is logged" docs/specs/spec-5-usage-log-and-advice.md` shows only qualified statements.

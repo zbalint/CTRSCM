@@ -2,7 +2,7 @@
 
 ## 0. Status
 
-**DRAFT (not locked), revised after the consultant review** (`m_665`, dispositions in section 8; 2026-10-06). Ready to lock once spec 8 is accepted (both edit `hooks/register.ts`); until then this file lives outside the repository. Backlog B20 follow-up, owner request.
+**LOCKED** (2026-10-06), revised after the consultant review (`m_665`, dispositions in section 8); gate record in section 9. Spec 8 is implemented (`344fab3`), so the `hooks/register.ts` overlap is gone. Backlog B20 follow-up, owner request.
 
 **Scope.** New files: `hooks/configFile.ts`, `tests/configFile.test.ts`. Edits: `hooks/config.ts`, `hooks/register.ts`, `hooks/status.ts`, `.claude-plugin/plugin.json`, `README.md`, `tests/config.test.ts`, `tests/status.test.ts`,
 `tests/register.test.ts`. Does not touch: `hooks/trigger.ts`, `hooks/shake.ts`, `hooks/artifacts.ts`, `hooks/recover.ts`, `hooks/usage.ts`, `hooks/usageLog.ts`, `hooks/report.ts`, `docs/*` and `AGENTS.md` (the architect edits `docs/usage.md`, `docs/architecture.md`,
@@ -37,7 +37,7 @@ the engine from `pluginConfigs`, and a launch the owner does not control can los
 
 ## 3. Mechanical changes
 
-1. `hooks/config.ts`: D3 blank handling in `parseConfig`, the `none` word for `protectedTools`, `mergeOptions` (D6). `parseConfig` callers: `hooks/register.ts:69` and `tests/config.test.ts` only (`rg -n parseConfig hooks tests`).
+1. `hooks/config.ts`: D3 blank handling in `parseConfig`, the `none` word for `protectedTools`, `mergeOptions` (D6). `parseConfig` callers: `hooks/register.ts:71` and `tests/config.test.ts` only (`rg -n parseConfig hooks tests`).
 2. `hooks/configFile.ts`: `readConfigFile(fs: { stat: (path: string) => Promise<{ kind: string }>; read: (path: string) => Promise<string> }, home: string | undefined): Promise<{ file?: Record<string, unknown>; logs: string[] }>`; type the structural `fs` from the Mod API's `stat` result, check `types/claude-code.d.ts` for its exact shape before typing.
 3. `hooks/register.ts`: the D5 read and merge in `session.start` before the registrations, the status counts and path kept in closure variables.
 4. `hooks/status.ts`: D7. `.claude-plugin/plugin.json` and `README.md` (a `## Config file` section: path, format, the three cases above, precedence per key, the `none` word, that a blank option means unset).
@@ -71,6 +71,7 @@ Live check afterwards (owner or tester): `~/.ctrscm/config.json` with `{"trigger
 F1 adopted (D3: blank is unset for every key; `none` for no protected tools). F2 accepted with the cost stated (D2). F3 adopted (D4: `stat`, symbolic links, HOME). F4 resolved by a simpler rule (D1: an invalid passed value falls to the built-in default). F5 noted: no stale capture at load; the spec 8 additions read `config.usageLog` at call time (check at review).
 F6 adopted (D6: no `explicit` set, so the return shape is unchanged and only about 3 assertions change; D7 counts four full blocks; case 3 pure-only). F7 adopted (D5: no parser message).
 
-## 9. Pre-lock gate (to run at lock, after spec 8)
+## 9. Pre-lock gate record (2026-10-06, base `6505403`)
 
-Steps 5, 7, 8, 9 and 10: `parseConfig` callers and the whole-object assertions in `tests/config.test.ts`; the 13 `userConfig` fields against `DEFAULT_CONFIG`; the three owner cases as worked examples against D1; `session.start`'s body and `register.ts` line numbers at the new base commit; spec 8's `usageLog` reads at call time.
+Run: `parseConfig` callers are `hooks/register.ts:71` and `tests/config.test.ts` (line 72 is the `protectedTools: ''` assertion D3 changes); the 13 `userConfig` fields equal `DEFAULT_CONFIG` (`artifactDir` default is the empty string); the four full-block `statusText` assertions sit at `tests/status.test.ts` lines 7, 29, 51, 58; `$.fs.stat` returns `FsStat` with `kind: 'file' | 'dir' | 'other'` and an optional second argument, so the structural `{ stat: (path: string) => Promise<{ kind: string }> }` accepts it; the `rg` scan for `node:`, `any`, `eval`, dynamic import and `@ts-` over `hooks tests` finds nothing today.
+Worked example for D1 and D6, the owner's file (11 keys, none passed): `options: 0 passed, 11 from file, 2 default` (`artifactDir`, `protectedTools`). Deferred to implementation: the acceptance commands that need the new code (`rg` on `plugin.json`, `claude plugin test`, tsc).

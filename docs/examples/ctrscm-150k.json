@@ -1,0 +1,19 @@
+{
+  "pluginConfigs": {
+    "ctrscm": {
+      "options": {
+        "autoShake": "on",
+        "triggerTokens": "150000",
+        "triggerPercent": "99",
+        "adviseTokens": "250000",
+        "cooldownTurns": "3",
+        "protectTokens": "16000",
+        "minSavings": "4000",
+        "minResultTokens": "200",
+        "aggressiveProtectTokens": "4000",
+        "usageLog": "on",
+        "fallback": "builtin"
+      }
+    }
+  }
+}

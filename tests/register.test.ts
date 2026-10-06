@@ -1,5 +1,5 @@
-import { expect, mock, test } from 'claude-code/testing'
-import type { SessionMeasureInput, SessionMessage } from 'claude-code'
+import { expect, mock, test, type Engine, type Plugin } from 'claude-code/testing'
+import type { On, SessionMeasureInput, SessionMessage, TurnCompleteInput } from 'claude-code'
 import { isArtifactId } from '../hooks/artifacts'
 import { PLACEHOLDER_PREFIX, RECOVER_TOOL } from '../hooks/shake'
 import { AGGRESSIVE_MARK, PROACTIVE_MARK } from '../hooks/trigger'
@@ -1001,6 +1001,303 @@ test('marked artifact write failure returns its skip reason without calling bene
   expect(writes).toHaveLength(2)
   expect(writes[1]).toContain('/usage/')
   expect(beneath).toBe(0)
+})
+
+const deferredCompaction: Plugin = {
+  name: 'compaction-host',
+  tier: 'prepend',
+  register(on) {
+    on('session.compact', async ($, e, next) => {
+      const rejection = await $.env.get('COMPACT_REJECT')
+      if (e.instructions === 'ctrscm:proactive') {
+        await $.env.get('COMPACT_PROACTIVE_MARK')
+      } else {
+        await $.env.get('COMPACT_AGGRESSIVE_MARK')
+      }
+      const input = {
+        trigger: e.trigger,
+        instructions: e.instructions,
+        messages: [{ role: 'user' as const, text: 'probe', toolUses: [] }],
+      }
+      if (rejection === 'reject') return next.to(input, 'core')
+      return next(input)
+    })
+  },
+}
+
+function deferredHarness($: Engine, on: On) {
+  const logs: string[] = []
+  const writes: Array<{ path: string; text: string }> = []
+  const toasts: string[] = []
+  const requests: string[] = []
+  let signalEntered = () => {}
+  let releaseGate = () => {}
+  let entered = Promise.resolve()
+  const gate = {
+    enabled: false,
+    arm() {
+      entered = new Promise<void>((resolve) => {
+        signalEntered = resolve
+        releaseGate = resolve
+      })
+      this.enabled = true
+    },
+    entered: () => entered,
+    release() {
+      releaseGate()
+    },
+  }
+  const host = { reject: true }
+  on('env.get', async ($, e) => {
+    if (e.name === 'COMPACT_PROACTIVE_MARK') {
+      requests.push(PROACTIVE_MARK)
+      return { value: undefined }
+    }
+    if (e.name === 'COMPACT_AGGRESSIVE_MARK') {
+      requests.push(AGGRESSIVE_MARK)
+      return { value: undefined }
+    }
+    if (e.name === 'COMPACT_REJECT') {
+      if (gate.enabled) {
+        gate.enabled = false
+        signalEntered()
+        await new Promise<void>((resolve) => {
+          releaseGate = resolve
+        })
+      }
+      return { value: host.reject ? 'reject' : undefined }
+    }
+    return { value: '/work/home' }
+  })
+  mock.clock(on, { now: Date.parse('2026-10-06T00:00:00.000Z') })
+  on('session.id', () => ({ value: 's-1' }))
+  on('tool.register', ($, e) => ({ value: { tool: `mcp__ctrscm__${e.name}` } }))
+  on('command.register', ($, e) => ({ value: { command: e.name } }))
+  on('fs.write', ($, e) => {
+    writes.push({ path: e.path, text: e.text })
+    return { value: undefined }
+  })
+  on('ui.log', ($, e) => {
+    logs.push(e.text)
+    return { value: undefined }
+  })
+  on('ui.toast', ($, e) => {
+    toasts.push(e.text)
+    return { value: undefined }
+  })
+  on('session.start', ($, e) => ({ cwd: e.cwd }))
+  on('session.measure', ($, e) => ({ changed: e.changed }))
+  on('turn.complete', () => ({ text: 'answer kept' }))
+  const measure = (tokens = 150000, percent = 75) =>
+    $.session.measure({ context: { window: 200000, tokens, percent }, rateLimits: [], changed: ['context'] })
+  const complete = (reason: Exclude<TurnCompleteInput['reason'], 'refusal'> = 'answer', agentId?: string) =>
+    $.turn.complete({ answer: '', durationMs: 1, isAborted: reason === 'aborted', turnId: 't-1', reason, agentId })
+  const status = () => $.command.run(commandRunInput('ctrscm'))
+  return { logs, writes, toasts, requests, gate, host, measure, complete, status }
+}
+
+
+test('a refused measure defers proactive compaction without reporting a failed pass', {
+  plugins: [deferredCompaction],
+}, async ($, on) => {
+  const h = deferredHarness($, on)
+  await $.session.start({ cwd: '/work', surface: null, isInteractive: false })
+  await expect(
+    $.session.compact({ trigger: 'plugin', instructions: PROACTIVE_MARK, messages } as never),
+  ).rejects.toThrow('no implementation for session.compact')
+  h.requests.length = 0
+  await h.measure()
+  expect(h.requests).toEqual([PROACTIVE_MARK])
+  expect(h.logs).toEqual(['CTRSCM: requesting proactive shake (context 75%)'])
+  expect(h.writes).toEqual([])
+  expect((await h.status()).text).toContain('last: none yet')
+  h.host.reject = false
+  h.logs.length = 0
+  h.requests.length = 0
+  await h.complete()
+  expect(h.requests).toEqual([PROACTIVE_MARK])
+  expect(h.logs).toEqual(['CTRSCM: retrying proactive shake at turn end'])
+  expect(h.writes).toHaveLength(1)
+  expect(JSON.parse(h.writes[0]?.text ?? '')).toEqual(expect.objectContaining({
+    event: 'shake',
+    label: 'proactive',
+    outcome: 'skipped',
+    reason: 'nothing worth shaking',
+  }))
+  expect((await h.status()).text).toContain('pending: none')
+  h.logs.length = 0
+  h.requests.length = 0
+  await h.measure(100000, 50)
+  expect(h.logs).toEqual([])
+  expect(h.requests).toEqual([])
+})
+
+test('a second rejection at turn end records failure and consumes the deferred request', {
+  plugins: [deferredCompaction],
+}, async ($, on) => {
+  const h = deferredHarness($, on)
+  await $.session.start({ cwd: '/work', surface: null, isInteractive: false })
+  await h.measure()
+  h.logs.length = 0
+  h.requests.length = 0
+  h.writes.length = 0
+  await h.complete()
+  expect(h.requests).toEqual([PROACTIVE_MARK])
+  expect(h.logs).toEqual([
+    'CTRSCM: retrying proactive shake at turn end',
+    'CTRSCM: proactive shake failed: no implementation for session.compact',
+  ])
+  expect(h.writes).toHaveLength(1)
+  expect(JSON.parse(h.writes[0]?.text ?? '')).toEqual({
+    version: 1,
+    at: '2026-10-06T00:00:00.000Z',
+    sessionId: 's-1',
+    agentId: null,
+    event: 'shake',
+    label: 'proactive',
+    outcome: 'failed',
+    reason: 'compaction failed',
+    results: 0,
+    chars: 0,
+    estimatedSavings: 0,
+    artifactIds: [],
+    contextTokens: 150000,
+    contextPercent: 75,
+    adviseTokens: null,
+  })
+  expect((await h.status()).text).toContain('last: proactive skipped: compaction failed')
+  expect((await h.status()).text).toContain('pending: none')
+  h.logs.length = 0
+  h.requests.length = 0
+  await h.measure(100000, 50)
+  expect(h.logs).toEqual([])
+  expect(h.requests).toEqual([])
+})
+
+test('a refused aggressive request is restored until turn-end failure and never retries again', {
+  plugins: [deferredCompaction],
+}, async ($, on) => {
+  const h = deferredHarness($, on)
+  await $.session.start({ cwd: '/work', surface: null, isInteractive: false })
+  expect(await $.command.run(commandRunInput('shake'))).toEqual({
+    text: 'CTRSCM: aggressive shake queued; it runs when the next turn completes',
+  })
+  await h.measure()
+  expect(h.requests).toEqual([AGGRESSIVE_MARK])
+  expect(h.logs).toEqual(['CTRSCM: requesting aggressive shake'])
+  expect((await h.status()).text).toContain('pending: aggressive shake')
+  expect(h.writes).toEqual([])
+  h.logs.length = 0
+  h.requests.length = 0
+  await h.complete()
+  expect(h.requests).toEqual([AGGRESSIVE_MARK])
+  expect(h.logs).toEqual([
+    'CTRSCM: retrying aggressive shake at turn end',
+    'CTRSCM: aggressive shake failed: no implementation for session.compact',
+  ])
+  expect(h.writes).toHaveLength(1)
+  expect(JSON.parse(h.writes[0]?.text ?? '')).toEqual(expect.objectContaining({
+    event: 'shake',
+    label: 'aggressive',
+    outcome: 'failed',
+    reason: 'compaction failed',
+  }))
+  expect((await h.status()).text).toContain('pending: none')
+  h.logs.length = 0
+  h.requests.length = 0
+  await h.measure(100000, 50)
+  expect(h.logs).toEqual([])
+  expect(h.requests).toEqual([])
+})
+
+test('a queued shake upgrades a deferred proactive request at turn end', {
+  plugins: [deferredCompaction],
+}, async ($, on) => {
+  const h = deferredHarness($, on)
+  await $.session.start({ cwd: '/work', surface: null, isInteractive: false })
+  await h.measure()
+  h.logs.length = 0
+  h.requests.length = 0
+  h.host.reject = false
+  expect(await $.command.run(commandRunInput('shake'))).toEqual({
+    text: 'CTRSCM: aggressive shake queued; it runs when the next turn completes',
+  })
+  await h.complete()
+  expect(h.requests).toEqual([AGGRESSIVE_MARK])
+  expect(h.logs).toEqual(['CTRSCM: retrying aggressive shake at turn end'])
+  expect(h.writes).toHaveLength(1)
+  expect(JSON.parse(h.writes[0]?.text ?? '')).toEqual(expect.objectContaining({
+    event: 'shake',
+    label: 'aggressive',
+    outcome: 'skipped',
+    reason: 'nothing worth shaking',
+  }))
+  expect((await h.status()).text).toContain('pending: none')
+})
+
+test('aborted turn leaves the deferred request for the next normal turn end', {
+  plugins: [deferredCompaction],
+}, async ($, on) => {
+  const h = deferredHarness($, on)
+  await $.session.start({ cwd: '/work', surface: null, isInteractive: false })
+  await h.measure()
+  h.logs.length = 0
+  h.requests.length = 0
+  await h.complete('aborted')
+  expect(h.logs).toEqual([])
+  expect(h.requests).toEqual([])
+  h.host.reject = false
+  await h.complete()
+  expect(h.requests).toEqual([PROACTIVE_MARK])
+  expect(h.logs).toEqual(['CTRSCM: retrying proactive shake at turn end'])
+})
+
+test('subagent turn leaves the deferred request for the main turn end', {
+  plugins: [deferredCompaction],
+}, async ($, on) => {
+  const h = deferredHarness($, on)
+  await $.session.start({ cwd: '/work', surface: null, isInteractive: false })
+  await h.measure()
+  h.logs.length = 0
+  h.requests.length = 0
+  await h.complete('answer', 'a-1')
+  expect(h.logs).toEqual([])
+  expect(h.requests).toEqual([])
+  h.host.reject = false
+  await h.complete()
+  expect(h.requests).toEqual([PROACTIVE_MARK])
+  expect(h.logs).toEqual(['CTRSCM: retrying proactive shake at turn end'])
+})
+
+test('a pending request suppresses advice on later measurements', {
+  plugins: [deferredCompaction],
+}, async ($, on) => {
+  const h = deferredHarness($, on)
+  await $.session.start({ cwd: '/work', surface: null, isInteractive: false })
+  await h.measure()
+  h.logs.length = 0
+  h.toasts.length = 0
+  h.requests.length = 0
+  await h.measure(200000, 100)
+  expect(h.logs).toEqual([])
+  expect(h.toasts).toEqual([])
+  expect(h.requests).toEqual([])
+})
+
+test('a measurement while requesting does not make a second request or advice', {
+  plugins: [deferredCompaction],
+}, async ($, on) => {
+  const h = deferredHarness($, on)
+  h.gate.arm()
+  await $.session.start({ cwd: '/work', surface: null, isInteractive: false })
+  const firstMeasure = h.measure()
+  await h.gate.entered()
+  await h.measure(160000, 80)
+  h.gate.release()
+  await firstMeasure
+  expect(h.logs).toEqual(['CTRSCM: requesting proactive shake (context 75%)'])
+  expect(h.toasts).toEqual([])
+  expect(h.requests).toEqual([PROACTIVE_MARK])
 })
 
 

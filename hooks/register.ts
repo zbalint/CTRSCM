@@ -9,7 +9,7 @@ import {
   selectResults,
 } from './shake'
 import { statusText, type Stats } from './status'
-import { decideAdvice, decideRequest, markOf, requestOf } from './trigger'
+import { decideAdvice, decideRequest, markOf, requestOf, type Request } from './trigger'
 import { usageEventPath, type UsageEvent } from './usage'
 
 function rootOf(artifactDir: string | undefined, home: string | undefined): string | undefined {
@@ -73,6 +73,7 @@ export function register(on: On, options: PluginOptions): void {
   let cooldown = 0
   let isPending = false
   let isRequesting = false
+  let wanted: Request | undefined
   let adviceCooldown = 0
   let lastContext: { tokens: number | null; percent: number | null } = { tokens: null, percent: null }
   const stats: Stats = { passes: 0, results: 0, savings: 0, last: 'none yet' }
@@ -137,7 +138,7 @@ export function register(on: On, options: PluginOptions): void {
         tokens: e.context.tokens ?? null,
         percent: e.context.percent ?? null,
       }
-      if (!isRequesting) {
+      if (!isRequesting && wanted === undefined) {
         const decision = decideRequest(e.context, config, { cooldown, isPending })
         cooldown = decision.cooldown
         if (decision.request === 'aggressive') isPending = false
@@ -151,34 +152,9 @@ export function register(on: On, options: PluginOptions): void {
           }
           try {
             await $.session.compact({ instructions: markOf(request) })
-          } catch (error) {
-            $.ui.log(`CTRSCM: ${request} shake failed: ${errorMessage(error)}`)
-            stats.last = `${request} skipped: compaction failed`
-            const root = await quietRoot(config.artifactDir, () => $.env.get('HOME'), (text) => $.ui.log(text))
-            await writeUsageEvent(
-              config.usageLog,
-              root,
-              {
-                agentId: null,
-                event: 'shake',
-                label: request,
-                outcome: 'failed',
-                reason: 'compaction failed',
-                results: 0,
-                chars: 0,
-                estimatedSavings: 0,
-                artifactIds: [],
-                contextTokens: lastContext.tokens,
-                contextPercent: lastContext.percent,
-                adviseTokens: null,
-              },
-              {
-                now: () => $.clock.now(),
-                sessionId: () => $.session.id(),
-                write: (path, text) => $.fs.write(path, text),
-                log: (text) => $.ui.log(text),
-              },
-            )
+          } catch {
+            wanted = request
+            if (request === 'aggressive') isPending = true
           } finally {
             isRequesting = false
           }
@@ -219,6 +195,50 @@ export function register(on: On, options: PluginOptions): void {
       }
     }
     return next(e)
+  })
+  on('turn.complete', async ($, e, next) => {
+    const result = await next(e)
+    if (wanted === undefined || isRequesting || e.reason !== 'answer' || e.agentId !== undefined) return result
+    const request = isPending ? 'aggressive' : wanted
+    wanted = undefined
+    isPending = false
+    isRequesting = true
+    $.ui.log(`CTRSCM: retrying ${request} shake at turn end`)
+    try {
+      await $.session.compact({ instructions: markOf(request) })
+    } catch (error) {
+      $.ui.log(`CTRSCM: ${request} shake failed: ${errorMessage(error)}`)
+      stats.last = `${request} skipped: compaction failed`
+      const root = await quietRoot(config.artifactDir, () => $.env.get('HOME'), (text) => $.ui.log(text))
+      await writeUsageEvent(
+        config.usageLog,
+        root,
+        {
+          agentId: null,
+          event: 'shake',
+          label: request,
+          outcome: 'failed',
+          reason: 'compaction failed',
+          results: 0,
+          chars: 0,
+          estimatedSavings: 0,
+          artifactIds: [],
+          contextTokens: lastContext.tokens,
+          contextPercent: lastContext.percent,
+          adviseTokens: null,
+        },
+        {
+          now: () => $.clock.now(),
+          sessionId: () => $.session.id(),
+          write: (path, text) => $.fs.write(path, text),
+          log: (text) => $.ui.log(text),
+        },
+      )
+    } finally {
+      isRequesting = false
+      cooldown = config.cooldownTurns
+    }
+    return result
   })
   on('tool.call', { tool: RECOVER_TOOL }, async ($, e) => {
     let root: string | undefined

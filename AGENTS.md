@@ -75,14 +75,17 @@ These hold in every spec. A change that breaks one needs an owner decision.
 
 | Module | Owns |
 | --- | --- |
-| `hooks/register.ts` | The `register(on, options)` entry; wires `session.start`, `session.measure`, `session.compact`, `command.run` (`/shake`, `/ctrscm`) and the recovery `tool.call` |
-| `hooks/config.ts` | Parsing `PluginOptions` into a validated config with defaults |
+| `hooks/register.ts` | The `register(on, options)` entry; wires `session.start` (reads the config file once), `session.measure`, `turn.complete`, `session.compact`, `command.run` (`/shake`, `/ctrscm`, `/ctrscm report`) and the recovery `tool.call` |
+| `hooks/config.ts` | Parsing `PluginOptions` into a validated config with defaults; `mergeOptions` (passed over file) |
+| `hooks/configFile.ts` | Reading and validating `$HOME/.ctrscm/config.json` over a structural `fs` |
 | `hooks/shake.ts` | Pure selection of eligible tool results, placeholders, token estimates, rebuilding messages |
 | `hooks/artifacts.ts` | Chunking, artifact write (chunks then manifest), manifest validation, paged read, over `$.fs` |
 | `hooks/recover.ts` | The recovery tool's name, schema and call handler |
 | `hooks/trigger.ts` | Pure proactive-trigger decision (thresholds, cooldown, pending `/shake`) and the request markers |
 | `hooks/status.ts` | Pure text of the `/ctrscm` status command |
-| `hooks/usage.ts` | Pure usage-event type and event file path (the log is written by `register.ts`) |
+| `hooks/usage.ts` | Pure usage-event types and event file path (the log is written by `register.ts`) |
+| `hooks/usageLog.ts` | Reading and validating usage events over a structural `fs` |
+| `hooks/report.ts` | Pure text of `/ctrscm report` |
 
 ## Documents
 

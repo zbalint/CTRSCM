@@ -1,6 +1,6 @@
 # Architecture
 
-Status: design for v1. Facts marked **verified** were read from source on 2026-10-05
+Status: design for v1, specs 1 to 9 implemented (`docs/specs/`). Facts marked **verified** were read from source on 2026-10-05
 (Claude Code 2.1.289; `anthropics/claude-code` at `2bfb629`, file `mods/types/claude-code.d.ts`;
 OMP at `693fd6e12b`, file `packages/agent/src/compaction/shake.ts`) or run (`claude plugin test`,
 `claude plugin validate` on the shipped `agents-md` mod, and a throwaway probe of the
@@ -62,7 +62,12 @@ removing it often avoids a summary altogether.
 - **Selection:** a tool result is eligible when it has text, sits outside the protected recent tail,
   is not an error, is not a protected tool, is not already a placeholder, and is large enough to save
   tokens. Defaults: protect 16,000 estimated tokens, require 4,000 estimated savings, minimum result
-  200 estimated tokens, protect `Skill` and CTRSCM's own recovery tool.
+  1,000 estimated tokens (spec 7), protect `Skill` and CTRSCM's own recovery tool.
+- **Options:** each option arrives as a string from the plugin configuration; the manifest declares no defaults, so an unset field
+  arrives as an empty string (probed, CLI 2.1.291). From spec 9 the mod also reads `$HOME/.ctrscm/config.json` once at the first
+  `session.start`; per key a passed option wins over the file, and the file over the built-in default (`DEFAULT_CONFIG`).
+- **Observability:** `turn.complete` and `session.measure` feed count-only usage events under the artifact root; `/ctrscm report` (spec 8)
+  summarizes them. A refused compaction request is deferred to `turn.complete` (spec 6).
 - **Estimates:** `ceil(chars / 4)`, named and reported as estimates.
 - **Rewrite scope:** only user messages that carry an eligible `toolResults` entry are rebuilt (their
   `handle` is dropped); every other message is returned as the engine's own object. A shaken entry

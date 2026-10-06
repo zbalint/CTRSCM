@@ -32,8 +32,11 @@ comes first), advice at 250000 tokens, the usual 16000-token protected tail and 
 
 ## Configuring it
 
-Options are strings (defaults and meaning in the README options table). The route that was run: a settings file with
-`pluginConfigs`, passed on the launch command line.
+Two routes. **Config file (spec 9):** put a flat JSON object in `~/.ctrscm/config.json` (`{"triggerTokens": 150000, "usageLog": "on"}`; strings,
+numbers and booleans; README section "Config file"). It is read once per session and survives launches that lose `--settings`
+(backlog B20). `/ctrscm` shows `options: N passed, M from file, K default` and the path. **Settings file:** options are strings
+(defaults and meaning in the README options table); a settings file with `pluginConfigs`, passed on the launch command line. A passed
+option wins over the config file per key. The settings route, which was run live:
 
 ```json
 {
@@ -109,6 +112,7 @@ What is known:
 
 - `/ctrscm` prints the configuration in effect, the artifact directory, this session's totals (passes, results shaken,
   estimated tokens saved) and the last outcome.
+- `/ctrscm report` prints the session's turn counts and the estimated cache effect of each Shake pass (spec 8).
 - `/shake` queues an aggressive pass; it runs when the next turn completes.
 - `/compact` keeps its normal meaning; with custom instructions it always goes to the built-in summarizer.
 
@@ -120,7 +124,7 @@ What is known:
   log line say `CTRSCM: context is N tokens (advice threshold M); consider /compact or a new session`, at most once per `cooldownTurns` measurements.
   It never compacts by itself. `adviseTokens` 0 turns it off.
 - **Usage log (persistent):** one small JSON file per event under `{artifact root}/usage/` (default `~/.ctrscm/artifacts/usage/`), named
-  `{timestamp}-{uuid}.json`. Fields: time, session id, `event` (`shake` or `advice`), `label` (`proactive`, `aggressive`, `manual`, `auto`, `plugin`),
+  `{timestamp}-{uuid}.json`. Fields: time, session id, `event` (`shake`, `advice` or `turn`; a `turn` event holds per-turn token counts, spec 8), `label` (`proactive`, `aggressive`, `manual`, `auto`, `plugin`),
   `outcome` (`shook`, `skipped`, `fallback`, `failed`), `reason`, number of results, characters externalized, estimated tokens saved, artifact ids, and the
   context tokens and percent from the last measurement before the pass. No tool-result text, no tool input, no paths other than the folder itself.
   `usageLog` `off` switches the shake events off. If the artifact root cannot be resolved nothing is written (a rejected `HOME` lookup is logged).
@@ -128,5 +132,5 @@ What is known:
 - The artifact directories under `artifactDir` hold what was shaken: one directory per result (`manifest.json` with the tool name, time and
   sizes, plus the chunk files).
 
-Not built yet: a report that sums the usage files per session and shows context over time and cache effects (backlog B16). Until then the
-files can be read directly (for example with `jq`); the cache numbers in `docs/verification.md` came from analyzing the session files.
+`/ctrscm report` (spec 8) sums the current session's events. Context over time and a category breakdown are not built (backlog B16, B19); older sessions can be read
+directly from the files (for example with `jq`).

@@ -12,7 +12,9 @@ test('empty options retain the contract defaults', () => {
       fallback: 'builtin',
       autoShake: true,
       triggerPercent: 50,
-      triggerTokens: 0,
+      triggerTokens: 120000,
+      adviseTokens: 150000,
+      usageLog: true,
       cooldownTurns: 3,
       aggressiveProtectTokens: 4000,
     },
@@ -40,7 +42,9 @@ test('numeric strings and option collections are parsed', () => {
       fallback: 'skip',
       autoShake: true,
       triggerPercent: 50,
-      triggerTokens: 0,
+      triggerTokens: 120000,
+      adviseTokens: 150000,
+      usageLog: true,
       cooldownTurns: 3,
       aggressiveProtectTokens: 4000,
     },
@@ -83,7 +87,9 @@ test('invalid numeric values keep defaults and report one problem each', () => {
     fallback: 'builtin',
     autoShake: true,
     triggerPercent: 50,
-    triggerTokens: 0,
+    triggerTokens: 120000,
+    adviseTokens: 150000,
+    usageLog: true,
     cooldownTurns: 3,
     aggressiveProtectTokens: 4000,
   })
@@ -101,6 +107,28 @@ test('autoShake accepts on/off strings and booleans', () => {
   expect(parseConfig({ autoShake: 'later' })).toEqual({
     config: { ...DEFAULT_CONFIG },
     problems: ['option autoShake: must be "on" or "off"; using the default'],
+  })
+})
+
+test('advice and usage options parse their literal forms and problems', () => {
+  expect(parseConfig({ adviseTokens: '0' }).config.adviseTokens).toBe(0)
+  expect(parseConfig({ adviseTokens: '150000', usageLog: 'off' }).config).toMatchObject({
+    adviseTokens: 150000,
+    usageLog: false,
+  })
+  expect(parseConfig({ usageLog: 'ON ' }).config.usageLog).toBe(true)
+  expect(parseConfig({ usageLog: false }).config.usageLog).toBe(false)
+  expect(parseConfig({ adviseTokens: 'abc' })).toEqual({
+    config: { ...DEFAULT_CONFIG },
+    problems: ['option adviseTokens: must be a safe integer at least 0; using the default'],
+  })
+  expect(parseConfig({ adviseTokens: -1 })).toEqual({
+    config: { ...DEFAULT_CONFIG },
+    problems: ['option adviseTokens: must be a safe integer at least 0; using the default'],
+  })
+  expect(parseConfig({ usageLog: 'later' })).toEqual({
+    config: { ...DEFAULT_CONFIG },
+    problems: ['option usageLog: must be "on" or "off"; using the default'],
   })
 })
 

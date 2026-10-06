@@ -9,13 +9,60 @@ import {
   selectResults,
 } from './shake'
 import { statusText, type Stats } from './status'
-import { decideRequest, markOf, requestOf } from './trigger'
+import { decideAdvice, decideRequest, markOf, requestOf } from './trigger'
+import { usageEventPath, type UsageEvent } from './usage'
+
 function rootOf(artifactDir: string | undefined, home: string | undefined): string | undefined {
   if (artifactDir !== undefined) return artifactDir
   return home === undefined || home === '' ? undefined : `${home}/.ctrscm/artifacts`
 }
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
+}
+
+type UsageWriteOperations = {
+  now: () => Promise<number>
+  sessionId: () => Promise<string>
+  write: (path: string, text: string) => Promise<void>
+  log: (text: string) => void
+}
+
+async function writeUsageEvent(
+  enabled: boolean,
+  root: string | undefined,
+  event: Omit<UsageEvent, 'version' | 'at' | 'sessionId'>,
+  operations: UsageWriteOperations,
+): Promise<void> {
+  if (!enabled || root === undefined) return
+  try {
+    const at = new Date(await operations.now()).toISOString()
+    let sessionId: string | null = null
+    try {
+      sessionId = await operations.sessionId()
+    } catch {
+      sessionId = null
+    }
+    const uuid = crypto.randomUUID()
+    await operations.write(
+      usageEventPath(root, at, uuid),
+      JSON.stringify({ version: 1, at, sessionId, ...event }),
+    )
+  } catch (error) {
+    operations.log(`CTRSCM: usage log write failed: ${errorMessage(error)}`)
+  }
+}
+
+async function quietRoot(
+  artifactDir: string | undefined,
+  readHome: () => Promise<string | undefined>,
+  log: (text: string) => void,
+): Promise<string | undefined> {
+  try {
+    return rootOf(artifactDir, artifactDir === undefined ? await readHome() : undefined)
+  } catch (error) {
+    log(`CTRSCM: artifact root lookup failed: ${errorMessage(error)}`)
+    return undefined
+  }
 }
 
 export function register(on: On, options: PluginOptions): void {
@@ -26,6 +73,8 @@ export function register(on: On, options: PluginOptions): void {
   let cooldown = 0
   let isPending = false
   let isRequesting = false
+  let adviceCooldown = 0
+  let lastContext: { tokens: number | null; percent: number | null } = { tokens: null, percent: null }
   const stats: Stats = { passes: 0, results: 0, savings: 0, last: 'none yet' }
 
   on('session.start', async ($, e, next) => {
@@ -83,25 +132,89 @@ export function register(on: On, options: PluginOptions): void {
   })
 
   on('session.measure', async ($, e, next) => {
-    if (!isRequesting && e.changed.includes('context')) {
-      const decision = decideRequest(e.context, config, { cooldown, isPending })
-      cooldown = decision.cooldown
-      if (decision.request === 'aggressive') isPending = false
-      if (decision.request !== undefined) {
-        const request = decision.request
-        isRequesting = true
-        if (request === 'proactive') {
-          $.ui.log(`CTRSCM: requesting proactive shake (context ${e.context.percent ?? '?'}%)`)
+    if (e.changed.includes('context')) {
+      lastContext = {
+        tokens: e.context.tokens ?? null,
+        percent: e.context.percent ?? null,
+      }
+      if (!isRequesting) {
+        const decision = decideRequest(e.context, config, { cooldown, isPending })
+        cooldown = decision.cooldown
+        if (decision.request === 'aggressive') isPending = false
+        if (decision.request !== undefined) {
+          const request = decision.request
+          isRequesting = true
+          if (request === 'proactive') {
+            $.ui.log(`CTRSCM: requesting proactive shake (context ${e.context.percent ?? '?'}%)`)
+          } else {
+            $.ui.log('CTRSCM: requesting aggressive shake')
+          }
+          try {
+            await $.session.compact({ instructions: markOf(request) })
+          } catch (error) {
+            $.ui.log(`CTRSCM: ${request} shake failed: ${errorMessage(error)}`)
+            stats.last = `${request} skipped: compaction failed`
+            const root = await quietRoot(config.artifactDir, () => $.env.get('HOME'), (text) => $.ui.log(text))
+            await writeUsageEvent(
+              config.usageLog,
+              root,
+              {
+                agentId: null,
+                event: 'shake',
+                label: request,
+                outcome: 'failed',
+                reason: 'compaction failed',
+                results: 0,
+                chars: 0,
+                estimatedSavings: 0,
+                artifactIds: [],
+                contextTokens: lastContext.tokens,
+                contextPercent: lastContext.percent,
+                adviseTokens: null,
+              },
+              {
+                now: () => $.clock.now(),
+                sessionId: () => $.session.id(),
+                write: (path, text) => $.fs.write(path, text),
+                log: (text) => $.ui.log(text),
+              },
+            )
+          } finally {
+            isRequesting = false
+          }
         } else {
-          $.ui.log('CTRSCM: requesting aggressive shake')
-        }
-        try {
-          await $.session.compact({ instructions: markOf(request) })
-        } catch (error) {
-          $.ui.log(`CTRSCM: ${request} shake failed: ${errorMessage(error)}`)
-          stats.last = `${request} skipped: compaction failed`
-        } finally {
-          isRequesting = false
+          const advice = decideAdvice(e.context, config, { cooldown: adviceCooldown })
+          adviceCooldown = advice.cooldown
+          if (advice.advise) {
+            const text = `CTRSCM: context is ${e.context.tokens} tokens (advice threshold ${config.adviseTokens}); consider /compact or a new session`
+            $.ui.toast(text)
+            $.ui.log(text)
+            const root = await quietRoot(config.artifactDir, () => $.env.get('HOME'), (text) => $.ui.log(text))
+            await writeUsageEvent(
+              config.usageLog,
+              root,
+              {
+                agentId: null,
+                event: 'advice',
+                label: null,
+                outcome: null,
+                reason: null,
+                results: 0,
+                chars: 0,
+                estimatedSavings: 0,
+                artifactIds: [],
+                contextTokens: e.context.tokens ?? null,
+                contextPercent: e.context.percent ?? null,
+                adviseTokens: config.adviseTokens,
+              },
+              {
+                now: () => $.clock.now(),
+                sessionId: () => $.session.id(),
+                write: (path, text) => $.fs.write(path, text),
+                log: (text) => $.ui.log(text),
+              },
+            )
+          }
         }
       }
     }
@@ -138,35 +251,91 @@ export function register(on: On, options: PluginOptions): void {
     ) {
       return next(e)
     }
-    const markedSkip = (reason: string) => {
+    const markedSkip = async (reason: string, root: string | undefined, shouldWrite = true) => {
       stats.last = `${request ?? 'unknown'} skipped: ${reason}`
+      if (shouldWrite) await writeShakeEvent(root, 'skipped', reason)
+      return { skip: `ctrscm: ${reason}` }
+    }
+    const markedFailure = async (reason: string, root: string | undefined) => {
+      stats.last = `${request ?? 'unknown'} skipped: ${reason}`
+      await writeShakeEvent(root, 'failed', reason)
       return { skip: `ctrscm: ${reason}` }
     }
     const trackedTrigger = e.trigger === 'manual' || e.trigger === 'auto' || e.trigger === 'plugin'
-    const fallback = () => {
+    const writeShakeEvent = async (
+      root: string | undefined,
+      outcome: Exclude<UsageEvent['outcome'], null>,
+      reason: string | null,
+      results = 0,
+      chars = 0,
+      estimatedSavings = 0,
+      artifactIds: string[] = [],
+    ) => {
+      await writeUsageEvent(
+        config.usageLog,
+        root,
+        {
+          agentId: e.agentId ?? null,
+          event: 'shake',
+          label: request ?? e.trigger,
+          outcome,
+          reason,
+          results,
+          chars,
+          estimatedSavings,
+          artifactIds,
+          contextTokens: lastContext.tokens,
+          contextPercent: lastContext.percent,
+          adviseTokens: null,
+        },
+        {
+          now: () => $.clock.now(),
+          sessionId: () => $.session.id(),
+          write: (path, text) => $.fs.write(path, text),
+          log: (text) => $.ui.log(text),
+        },
+      )
+    }
+    const eventRoot = () => quietRoot(config.artifactDir, () => $.env.get('HOME'), (text) => $.ui.log(text))
+    const fallback = async (reason: string, root: string | undefined, shouldWrite = true) => {
       if (trackedTrigger) stats.last = `${e.trigger} skipped: shake not applied`
+      if (shouldWrite) await writeShakeEvent(root, 'fallback', reason)
       return config.fallback === 'builtin' ? next(e) : { skip: 'ctrscm: shake not applied' }
     }
-    if (request !== undefined && !Array.isArray(e.messages)) return markedSkip('no transcript')
-    if (!isRecoverReady) return request === undefined ? fallback() : markedSkip('recovery tool not registered')
+    if (request !== undefined && !Array.isArray(e.messages)) return markedSkip('no transcript', await eventRoot())
+    if (!isRecoverReady) {
+      return request === undefined
+        ? fallback('recovery tool not registered', await eventRoot())
+        : markedSkip('recovery tool not registered', await eventRoot())
+    }
 
     const settings =
       request === 'aggressive' ? { ...config, protectTokens: config.aggressiveProtectTokens } : config
     const selection = selectResults(e.messages, settings)
     if (selection.selected.length === 0) {
-      return request === undefined ? fallback() : markedSkip('nothing worth shaking')
+      return request === undefined
+        ? fallback('nothing worth shaking', await eventRoot())
+        : markedSkip('nothing worth shaking', await eventRoot())
     }
+    const chars = selection.selected.reduce((total, selected) => total + selected.text.length, 0)
     let root: string | undefined
     try {
       const home = config.artifactDir === undefined ? await $.env.get('HOME') : undefined
       root = rootOf(config.artifactDir, home)
     } catch (error) {
       $.ui.log(`CTRSCM: artifact root lookup failed: ${errorMessage(error)}`)
-      return request === undefined ? fallback() : markedSkip('artifact root unavailable')
+      return request === undefined
+        ? fallback('artifact root unavailable', undefined, false)
+        : markedSkip('artifact root unavailable', undefined, false)
     }
-    if (root === undefined) return request === undefined ? fallback() : markedSkip('artifact root unavailable')
+    if (root === undefined) {
+      return request === undefined
+        ? fallback('artifact root unavailable', undefined, false)
+        : markedSkip('artifact root unavailable', undefined, false)
+    }
 
     const placeholders = new Map<string, string>()
+    const artifactIds: string[] = []
     let written = 0
     const fs = {
       read: (path: string) => $.fs.read(path),
@@ -189,11 +358,14 @@ export function register(on: On, options: PluginOptions): void {
           selected.text,
         )
         placeholders.set(selected.toolUseId, placeholderOf(id, selected.text.length, selected.tokens, selected.label))
+        artifactIds.push(id)
         written += 1
       }
     } catch (error) {
       $.ui.log(`CTRSCM: artifact write failed after ${written} artifacts: ${errorMessage(error)}`)
-      return request === undefined ? fallback() : markedSkip('artifact write failed')
+      return request === undefined
+        ? fallback('artifact write failed', root)
+        : markedFailure('artifact write failed', root)
     }
 
     const messages = rebuild(e.messages, placeholders)
@@ -205,6 +377,15 @@ export function register(on: On, options: PluginOptions): void {
       const label = request ?? e.trigger
       stats.last = `${label} shook ${selection.selected.length} results (~${selection.savings} estimated tokens)`
     }
+    await writeShakeEvent(
+      root,
+      'shook',
+      null,
+      selection.selected.length,
+      chars,
+      selection.savings,
+      artifactIds,
+    )
     return { messages }
   })
 }

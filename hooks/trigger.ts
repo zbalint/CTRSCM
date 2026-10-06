@@ -30,3 +30,14 @@ export function decideRequest(
   }
   return { request: undefined, cooldown: 0 }
 }
+
+export function decideAdvice(
+  context: { tokens?: number },
+  config: Pick<Config, 'adviseTokens' | 'cooldownTurns'>,
+  state: { cooldown: number },
+): { advise: boolean; cooldown: number } {
+  if (config.adviseTokens === 0 || context.tokens === undefined) return { advise: false, cooldown: 0 }
+  if (state.cooldown > 0) return { advise: false, cooldown: state.cooldown - 1 }
+  if (context.tokens >= config.adviseTokens) return { advise: true, cooldown: config.cooldownTurns }
+  return { advise: false, cooldown: 0 }
+}

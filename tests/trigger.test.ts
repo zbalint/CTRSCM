@@ -1,6 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 import { DEFAULT_CONFIG } from '../hooks/config'
-import { AGGRESSIVE_MARK, PROACTIVE_MARK, decideRequest, markOf, requestOf } from '../hooks/trigger'
+import { AGGRESSIVE_MARK, PROACTIVE_MARK, decideAdvice, decideRequest, markOf, requestOf } from '../hooks/trigger'
 
 test('request marks round-trip exactly', () => {
   expect(PROACTIVE_MARK).toBe('ctrscm:proactive')
@@ -58,6 +58,21 @@ test('percent and token thresholds trigger only when figures are reported', () =
       { cooldown: 0, isPending: false },
     ),
   ).toEqual({ request: undefined, cooldown: 0 })
+})
+
+test('advice thresholds and cooldowns follow the literal sequence', () => {
+  const config = { adviseTokens: 150000, cooldownTurns: 3 }
+  expect(decideAdvice({ tokens: undefined }, config, { cooldown: 0 })).toEqual({ advise: false, cooldown: 0 })
+  expect(decideAdvice({ tokens: 149999 }, config, { cooldown: 0 })).toEqual({ advise: false, cooldown: 0 })
+  expect(decideAdvice({ tokens: 150000 }, config, { cooldown: 0 })).toEqual({ advise: true, cooldown: 3 })
+  expect(decideAdvice({ tokens: 160000 }, config, { cooldown: 3 })).toEqual({ advise: false, cooldown: 2 })
+  expect(decideAdvice({ tokens: 160000 }, config, { cooldown: 2 })).toEqual({ advise: false, cooldown: 1 })
+  expect(decideAdvice({ tokens: 160000 }, config, { cooldown: 1 })).toEqual({ advise: false, cooldown: 0 })
+  expect(decideAdvice({ tokens: 160000 }, config, { cooldown: 0 })).toEqual({ advise: true, cooldown: 3 })
+  expect(decideAdvice({ tokens: 160000 }, { adviseTokens: 0, cooldownTurns: 3 }, { cooldown: 2 })).toEqual({
+    advise: false,
+    cooldown: 0,
+  })
 })
 
 test('autoShake off suppresses threshold requests', () => {

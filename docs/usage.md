@@ -100,14 +100,21 @@ What is known:
 - `/shake` queues an aggressive pass; it runs when the next turn completes.
 - `/compact` keeps its normal meaning; with custom instructions it always goes to the built-in summarizer.
 
-## What it logs today
+## What it logs
 
 - `$.ui.log` lines in the session (they show in the interface): `CTRSCM: requesting proactive shake (context N%)`,
   `CTRSCM: shook N tool results (~T estimated tokens)`, option problems and failures. Counts and ids only, never tool-result text.
-- `/ctrscm` totals are kept in memory for the running session and are lost when it ends.
-- The artifact directories under `artifactDir` are the durable trace: one directory per shaken result (`manifest.json` with
-  the tool name, time and sizes, plus the chunk files).
+- **Advice:** when the context is at or above `adviseTokens` (default 150000) and no Shake pass was requested in that measurement, a toast and a
+  log line say `CTRSCM: context is N tokens (advice threshold M); consider /compact or a new session`, at most once per `cooldownTurns` measurements.
+  It never compacts by itself. `adviseTokens` 0 turns it off.
+- **Usage log (persistent):** one small JSON file per event under `{artifact root}/usage/` (default `~/.ctrscm/artifacts/usage/`), named
+  `{timestamp}-{uuid}.json`. Fields: time, session id, `event` (`shake` or `advice`), `label` (`proactive`, `aggressive`, `manual`, `auto`, `plugin`),
+  `outcome` (`shook`, `skipped`, `fallback`, `failed`), `reason`, number of results, characters externalized, estimated tokens saved, artifact ids, and the
+  context tokens and percent from the last measurement before the pass. No tool-result text, no tool input, no paths other than the folder itself.
+  `usageLog` `off` switches the shake events off. If the artifact root cannot be resolved nothing is written (a rejected `HOME` lookup is logged).
+- `/ctrscm` totals (and the usage location) show the running session only; the usage files are the record across sessions.
+- The artifact directories under `artifactDir` hold what was shaken: one directory per result (`manifest.json` with the tool name, time and
+  sizes, plus the chunk files).
 
-There is **no persistent usage log** and nothing measures the effect on the prompt cache. The numbers in
-`docs/verification.md` (tokens before and after a compaction, cache creation and read) came from analyzing the session
-files after the run. Backlog items B15 and B16 track a persistent per-event log and a report tool.
+Not built yet: a report that sums the usage files per session and shows context over time and cache effects (backlog B16). Until then the
+files can be read directly (for example with `jq`); the cache numbers in `docs/verification.md` came from analyzing the session files.

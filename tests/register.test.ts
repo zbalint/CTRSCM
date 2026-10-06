@@ -4,6 +4,7 @@ import { isArtifactId } from '../hooks/artifacts'
 import { PLACEHOLDER_PREFIX, RECOVER_TOOL } from '../hooks/shake'
 import { AGGRESSIVE_MARK, PROACTIVE_MARK } from '../hooks/trigger'
 import { commandRunInput } from './fixtures/commandRunInput'
+import { usageEventPath } from '../hooks/usage'
 const large = 'x'.repeat(80000)
 const messages: SessionMessage[] = [
   { role: 'user', text: 'start', toolUses: [], toolResults: [], handle: 'm0' },
@@ -52,6 +53,7 @@ test('session start registers recovery, auto compaction writes artifacts, and re
   const logs: string[] = []
   mock.env(on, { HOME: '/home/example' })
   mock.clock(on, { now: Date.parse('2026-10-05T00:00:00.000Z') })
+  on('session.id', () => ({ value: 's-1' }))
   on('tool.register', ($, e) => ({ value: { tool: `mcp__ctrscm__${e.name}` } }))
   on('command.register', ($, e) => ({ value: { command: e.name } }))
   on('fs.write', ($, e) => {
@@ -98,7 +100,32 @@ test('session start registers recovery, auto compaction writes artifacts, and re
   const chunkPath = writes[0]?.path
   expect(chunkPath).toBe(`/home/example/.ctrscm/artifacts/${artifactId}/chunk-0000.txt`)
   expect(manifestPath).toBe(`/home/example/.ctrscm/artifacts/${artifactId}/manifest.json`)
-  expect(writes).toHaveLength(2)
+  expect(writes).toHaveLength(3)
+  const usageWrite = writes[2]
+  if (usageWrite === undefined) throw new Error('missing usage event write')
+  const usageFile = usageWrite.path.split('/').at(-1)
+  if (usageFile === undefined) throw new Error('missing usage event filename')
+  const uuid = usageFile.slice('2026-10-05T00-00-00-000Z-'.length, -'.json'.length)
+  expect(usageWrite.path).toBe(
+    usageEventPath('/home/example/.ctrscm/artifacts', '2026-10-05T00:00:00.000Z', uuid),
+  )
+  expect(JSON.parse(usageWrite.text)).toEqual({
+    version: 1,
+    at: '2026-10-05T00:00:00.000Z',
+    sessionId: 's-1',
+    agentId: null,
+    event: 'shake',
+    label: 'auto',
+    outcome: 'shook',
+    reason: null,
+    results: 1,
+    chars: 80000,
+    estimatedSavings: 19960,
+    artifactIds: [artifactId],
+    contextTokens: null,
+    contextPercent: null,
+    adviseTokens: null,
+  })
   expect(logs).toEqual(['CTRSCM: shook 1 tool results (~19960 estimated tokens)'])
 
   const recovered = await $.tool.call({
@@ -113,8 +140,106 @@ test('session start registers recovery, auto compaction writes artifacts, and re
   })
 })
 
+test('a usage event write failure does not change a successful compaction', async ($, on) => {
+  const writes: string[] = []
+  const logs: string[] = []
+  mock.env(on, { HOME: '/home/example' })
+  mock.clock(on, { now: Date.parse('2026-10-05T00:00:00.000Z') })
+  on('session.id', () => ({ value: 's-1' }))
+  on('tool.register', ($, e) => ({ value: { tool: `mcp__ctrscm__${e.name}` } }))
+  on('command.register', ($, e) => ({ value: { command: e.name } }))
+  on('fs.write', ($, e) => {
+    writes.push(e.path)
+    if (e.path.includes('/usage/')) throw new Error('usage disk full')
+    return { value: undefined }
+  })
+  on('ui.log', ($, e) => {
+    logs.push(e.text)
+    return { value: undefined }
+  })
+  on('session.start', ($, e) => ({ cwd: e.cwd }))
+  await $.session.start({ cwd: '/work', surface: null, isInteractive: false })
+  const result = await $.session.compact({
+    trigger: 'plugin',
+    instructions: PROACTIVE_MARK,
+    messages,
+  } as never)
+  if (!('messages' in result) || result.messages === undefined) {
+    throw new Error('expected a rewritten transcript')
+  }
+  expect(result.messages[2]).toEqual(expect.objectContaining({
+    toolResults: [expect.objectContaining({ text: expect.stringContaining(PLACEHOLDER_PREFIX) })],
+  }))
+  expect(writes).toHaveLength(3)
+  expect(writes[2]).toContain('/usage/')
+  expect(logs).toEqual([
+    'CTRSCM: shook 1 tool results (~19960 estimated tokens)',
+    'CTRSCM: usage log write failed: no implementation for fs.write',
+  ])
+})
+
+test('marked proactive transcript writes a literal shake usage event', async ($, on) => {
+  const writes: Array<{ path: string; text: string }> = []
+  mock.env(on, { HOME: '/home/example' })
+  mock.clock(on, { now: Date.parse('2026-10-05T00:00:00.000Z') })
+  on('session.id', () => ({ value: 's-1' }))
+  on('tool.register', ($, e) => ({ value: { tool: `mcp__ctrscm__${e.name}` } }))
+  on('command.register', ($, e) => ({ value: { command: e.name } }))
+  on('fs.write', ($, e) => {
+    writes.push({ path: e.path, text: e.text })
+    return { value: undefined }
+  })
+  on('session.start', ($, e) => ({ cwd: e.cwd }))
+  await $.session.start({ cwd: '/work', surface: null, isInteractive: false })
+  const result = await $.session.compact({
+    trigger: 'plugin',
+    instructions: PROACTIVE_MARK,
+    messages: proactiveMessages,
+  } as never)
+  if (!('messages' in result) || result.messages === undefined) {
+    throw new Error('expected a rewritten transcript')
+  }
+  const manifestPath = writes[1]?.path
+  if (manifestPath === undefined) throw new Error('missing artifact manifest')
+  const artifactId = manifestPath.split('/').at(-2)
+  if (artifactId === undefined) throw new Error('missing artifact id')
+  const usageWrite = writes[2]
+  if (usageWrite === undefined) throw new Error('missing usage event')
+  const usageFile = usageWrite.path.split('/').at(-1)
+  if (usageFile === undefined) throw new Error('missing usage event filename')
+  const uuid = usageFile.slice('2026-10-05T00-00-00-000Z-'.length, -'.json'.length)
+  expect(usageWrite.path).toBe(
+    usageEventPath('/home/example/.ctrscm/artifacts', '2026-10-05T00:00:00.000Z', uuid),
+  )
+  expect(JSON.parse(usageWrite.text)).toEqual({
+    version: 1,
+    at: '2026-10-05T00:00:00.000Z',
+    sessionId: 's-1',
+    agentId: null,
+    event: 'shake',
+    label: 'proactive',
+    outcome: 'shook',
+    reason: null,
+    results: 1,
+    chars: 80000,
+    estimatedSavings: 19960,
+    artifactIds: [artifactId],
+    contextTokens: null,
+    contextPercent: null,
+    adviseTokens: null,
+  })
+})
+
 test('precompute and instructed manual compaction use their mandated paths', async ($, on) => {
   let beneath = 0
+  const writes: string[] = []
+  mock.env(on, { HOME: '/home/example' })
+  mock.clock(on, { now: Date.parse('2026-10-05T00:00:00.000Z') })
+  on('session.id', () => ({ value: 's-1' }))
+  on('fs.write', ($, e) => {
+    writes.push(e.path)
+    return { value: undefined }
+  })
   on('session.compact', ($, e) => {
     beneath += 1
     return { messages: e.messages }
@@ -129,6 +254,7 @@ test('precompute and instructed manual compaction use their mandated paths', asy
   } as never)
   expect(manual).toEqual({ messages })
   expect(beneath).toBe(1)
+  expect(writes).toEqual([])
 })
 
 test('failed recovery registration and artifact root use the builtin fallback', async ($, on) => {
@@ -150,13 +276,26 @@ test('failed recovery registration and artifact root use the builtin fallback', 
   expect(await $.session.start({ cwd: '/work', surface: null, isInteractive: false })).toEqual({ cwd: '/work' })
   expect(await $.session.compact({ trigger: 'auto', messages } as never)).toEqual({ messages })
   expect(beneath).toBe(1)
-  expect(logs).toEqual(['CTRSCM: recovery registration failed: no implementation for tool.register'])
+  expect(logs).toEqual([
+    'CTRSCM: recovery registration failed: no implementation for tool.register',
+    'CTRSCM: artifact root lookup failed: no implementation for env.get',
+  ])
 })
 
 
 test('successful registration without HOME falls back without rewriting', async ($, on) => {
   let beneath = 0
+  const writes: string[] = []
+  const logs: string[] = []
   mock.env(on, {})
+  on('fs.write', ($, e) => {
+    writes.push(e.path)
+    return { value: undefined }
+  })
+  on('ui.log', ($, e) => {
+    logs.push(e.text)
+    return { value: undefined }
+  })
   on('tool.register', ($, e) => ({ value: { tool: `mcp__ctrscm__${e.name}` } }))
   on('command.register', ($, e) => ({ value: { command: e.name } }))
   on('session.start', ($, e) => ({ cwd: e.cwd }))
@@ -175,6 +314,82 @@ test('successful registration without HOME falls back without rewriting', async 
     } as never),
   ).toEqual({ skip: 'ctrscm: artifact root unavailable' })
   expect(beneath).toBe(1)
+  expect(writes).toEqual([])
+  expect(logs).toEqual([])
+})
+
+test('rejected HOME lookup leaves no usage event or log', async ($, on) => {
+  const writes: string[] = []
+  const logs: string[] = []
+  on('env.get', () => {
+    throw new Error('HOME rejected')
+  })
+  on('fs.write', ($, e) => {
+    writes.push(e.path)
+    return { value: undefined }
+  })
+  on('ui.log', ($, e) => {
+    logs.push(e.text)
+    return { value: undefined }
+  })
+  on('tool.register', ($, e) => ({ value: { tool: `mcp__ctrscm__${e.name}` } }))
+  on('command.register', ($, e) => ({ value: { command: e.name } }))
+  on('session.start', ($, e) => ({ cwd: e.cwd }))
+  on('session.compact', ($, e) => ({ messages: e.messages }))
+  await $.session.start({ cwd: '/work', surface: null, isInteractive: false })
+  expect(await $.session.compact({ trigger: 'auto', messages } as never)).toEqual({ messages })
+  expect(writes).toEqual([])
+  expect(logs).toEqual(['CTRSCM: artifact root lookup failed: no implementation for env.get'])
+})
+
+test('rejected HOME during advice logs lookup failure without an event', async ($, on) => {
+  const writes: string[] = []
+  const logs: string[] = []
+  const toasts: string[] = []
+  let rejectHome = false
+  on('env.get', () => {
+    if (rejectHome) throw new Error('HOME rejected')
+    return { value: '/home/example' }
+  })
+  on('session.id', () => ({ value: 's-1' }))
+  mock.clock(on, { now: Date.parse('2026-10-05T00:00:00.000Z') })
+  on('fs.write', ($, e) => {
+    writes.push(e.path)
+    return { value: undefined }
+  })
+  on('ui.log', ($, e) => {
+    logs.push(e.text)
+    return { value: undefined }
+  })
+  on('ui.toast', ($, e) => {
+    toasts.push(e.text)
+    return { value: undefined }
+  })
+  on('tool.register', ($, e) => ({ value: { tool: `mcp__ctrscm__${e.name}` } }))
+  on('command.register', ($, e) => ({ value: { command: e.name } }))
+  on('session.start', ($, e) => ({ cwd: e.cwd }))
+  on('session.measure', ($, e) => ({ changed: e.changed }))
+  await $.session.start({ cwd: '/work', surface: null, isInteractive: false })
+  const measure = (tokens: number, percent: number) =>
+    $.session.measure({
+      context: { window: 200000, tokens, percent },
+      rateLimits: [],
+      changed: ['context'],
+    })
+  await measure(150000, 75)
+  await measure(149999, 75)
+  writes.length = 0
+  logs.length = 0
+  rejectHome = true
+  await measure(150000, 75)
+  expect(toasts).toEqual([
+    'CTRSCM: context is 150000 tokens (advice threshold 150000); consider /compact or a new session',
+  ])
+  expect(logs).toEqual([
+    'CTRSCM: context is 150000 tokens (advice threshold 150000); consider /compact or a new session',
+    'CTRSCM: artifact root lookup failed: no implementation for env.get',
+  ])
+  expect(writes).toEqual([])
 })
 
 test('a later artifact write failure falls back after leaving only orphaned chunks', async ($, on) => {
@@ -183,6 +398,7 @@ test('a later artifact write failure falls back after leaving only orphaned chun
   let manifestWrites = 0
   mock.env(on, { HOME: '/home/example' })
   mock.clock(on, { now: Date.parse('2026-10-05T00:00:00.000Z') })
+  on('session.id', () => ({ value: 's-1' }))
   on('tool.register', ($, e) => ({ value: { tool: `mcp__ctrscm__${e.name}` } }))
   on('command.register', ($, e) => ({ value: { command: e.name } }))
   on('fs.write', ($, e) => {
@@ -203,17 +419,21 @@ test('a later artifact write failure falls back after leaving only orphaned chun
   expect(await $.session.compact({ trigger: 'auto', messages: twoSelectedMessages } as never)).toEqual({
     messages: twoSelectedMessages,
   })
-  expect(writes).toHaveLength(4)
+  expect(writes).toHaveLength(5)
   expect(writes[0]).toContain('/chunk-0000.txt')
   expect(writes[1]).toContain('/manifest.json')
   expect(writes[2]).toContain('/chunk-0000.txt')
   expect(writes[3]).toContain('/manifest.json')
+  expect(writes[4]).toContain('/usage/')
   expect(logs[0]).toContain('CTRSCM: artifact write failed after 1 artifacts')
 })
 
 test('session measure registers commands, triggers proactive Shake, and reports status', async ($, on) => {
   const logs: string[] = []
   const commands: string[] = []
+  mock.clock(on, { now: Date.parse('2026-10-05T00:00:00.000Z') })
+  on('session.id', () => ({ value: 's-1' }))
+  on('fs.write', () => ({ value: undefined }))
   mock.env(on, { HOME: '/home/example' })
   on('tool.register', ($, e) => ({ value: { tool: `mcp__ctrscm__${e.name}` } }))
   on('command.register', ($, e) => {
@@ -241,8 +461,111 @@ test('session measure registers commands, triggers proactive Shake, and reports 
   expect(status.text).toContain('last: proactive skipped: no transcript')
 })
 
+test('advice sequence follows request and advice cooldowns with literal events', async ($, on) => {
+  const writes: Array<{ path: string; text: string }> = []
+  const logs: string[] = []
+  const toasts: string[] = []
+  mock.env(on, { HOME: '/home/example' })
+  mock.clock(on, { now: Date.parse('2026-10-05T00:00:00.000Z') })
+  on('session.id', () => ({ value: 's-1' }))
+  on('tool.register', ($, e) => ({ value: { tool: `mcp__ctrscm__${e.name}` } }))
+  on('command.register', ($, e) => ({ value: { command: e.name } }))
+  on('fs.write', ($, e) => {
+    writes.push({ path: e.path, text: e.text })
+    return { value: undefined }
+  })
+  on('ui.log', ($, e) => {
+    logs.push(e.text)
+    return { value: undefined }
+  })
+  on('ui.toast', ($, e) => {
+    toasts.push(e.text)
+    return { value: undefined }
+  })
+  on('session.start', ($, e) => ({ cwd: e.cwd }))
+  on('session.measure', ($, e) => ({ changed: e.changed }))
+  await $.session.start({ cwd: '/work', surface: null, isInteractive: false })
+
+  const measure = (tokens: number, percent: number, changed: SessionMeasureInput['changed'] = ['context']) =>
+    $.session.measure({
+      context: { window: 200000, tokens, percent },
+      rateLimits: [],
+      changed,
+    })
+  await measure(150000, 75)
+  await measure(149999, 75)
+  await measure(150000, 75)
+  await measure(160000, 80)
+  await measure(160000, 80)
+  await measure(160000, 80, ['rateLimits'])
+
+  expect(logs).toEqual([
+    'CTRSCM: requesting proactive shake (context 75%)',
+    'CTRSCM: context is 150000 tokens (advice threshold 150000); consider /compact or a new session',
+    'CTRSCM: requesting proactive shake (context 80%)',
+  ])
+  expect(toasts).toEqual([
+    'CTRSCM: context is 150000 tokens (advice threshold 150000); consider /compact or a new session',
+  ])
+  expect(writes).toHaveLength(3)
+  expect(JSON.parse(writes[0]?.text ?? '')).toEqual({
+    version: 1,
+    at: '2026-10-05T00:00:00.000Z',
+    sessionId: 's-1',
+    agentId: null,
+    event: 'shake',
+    label: 'proactive',
+    outcome: 'skipped',
+    reason: 'no transcript',
+    results: 0,
+    chars: 0,
+    estimatedSavings: 0,
+    artifactIds: [],
+    contextTokens: 150000,
+    contextPercent: 75,
+    adviseTokens: null,
+  })
+  expect(JSON.parse(writes[1]?.text ?? '')).toEqual({
+    version: 1,
+    at: '2026-10-05T00:00:00.000Z',
+    sessionId: 's-1',
+    agentId: null,
+    event: 'advice',
+    label: null,
+    outcome: null,
+    reason: null,
+    results: 0,
+    chars: 0,
+    estimatedSavings: 0,
+    artifactIds: [],
+    contextTokens: 150000,
+    contextPercent: 75,
+    adviseTokens: 150000,
+  })
+  expect(JSON.parse(writes[2]?.text ?? '')).toEqual({
+    version: 1,
+    at: '2026-10-05T00:00:00.000Z',
+    sessionId: 's-1',
+    agentId: null,
+    event: 'shake',
+    label: 'proactive',
+    outcome: 'skipped',
+    reason: 'no transcript',
+    results: 0,
+    chars: 0,
+    estimatedSavings: 0,
+    artifactIds: [],
+    contextTokens: 160000,
+    contextPercent: 80,
+    adviseTokens: null,
+  })
+})
+
 test('session measure ignores unrelated changes and honors the proactive cooldown', async ($, on) => {
   const logs: string[] = []
+  mock.clock(on, { now: Date.parse('2026-10-05T00:00:00.000Z') })
+  on('session.id', () => ({ value: 's-1' }))
+  on('fs.write', () => ({ value: undefined }))
   mock.env(on, { HOME: '/home/example' })
   on('tool.register', ($, e) => ({ value: { tool: `mcp__ctrscm__${e.name}` } }))
   on('command.register', ($, e) => ({ value: { command: e.name } }))
@@ -280,6 +603,9 @@ test('session measure ignores unrelated changes and honors the proactive cooldow
 
 test('shake command queues an aggressive pass for the next changed-context measure', async ($, on) => {
   const logs: string[] = []
+  mock.clock(on, { now: Date.parse('2026-10-05T00:00:00.000Z') })
+  on('session.id', () => ({ value: 's-1' }))
+  on('fs.write', () => ({ value: undefined }))
   mock.env(on, { HOME: '/home/example' })
   on('tool.register', ($, e) => ({ value: { tool: `mcp__ctrscm__${e.name}` } }))
   on('command.register', ($, e) => ({ value: { command: e.name } }))
@@ -512,6 +838,18 @@ test('marked calls skip when eligible savings are below the configured minimum',
     { role: 'assistant', text: 'x'.repeat(64000), toolUses: [] },
   ]
   let beneath = 0
+  const writes: Array<{ path: string; text: string }> = []
+  const logs: string[] = []
+  mock.clock(on, { now: Date.parse('2026-10-05T00:00:00.000Z') })
+  on('session.id', () => ({ value: 's-1' }))
+  on('fs.write', ($, e) => {
+    writes.push({ path: e.path, text: e.text })
+    return { value: undefined }
+  })
+  on('ui.log', ($, e) => {
+    logs.push(e.text)
+    return { value: undefined }
+  })
   mock.env(on, { HOME: '/home/example' })
   on('tool.register', ($, e) => ({ value: { tool: `mcp__ctrscm__${e.name}` } }))
   on('command.register', ($, e) => ({ value: { command: e.name } }))
@@ -529,8 +867,82 @@ test('marked calls skip when eligible savings are below the configured minimum',
     } as never),
   ).toEqual({ skip: 'ctrscm: nothing worth shaking' })
   expect(beneath).toBe(0)
+  expect(logs).toEqual([])
+  expect(writes).toHaveLength(1)
+  expect(JSON.parse(writes[0]?.text ?? '')).toEqual({
+    version: 1,
+    at: '2026-10-05T00:00:00.000Z',
+    sessionId: 's-1',
+    agentId: null,
+    event: 'shake',
+    label: 'proactive',
+    outcome: 'skipped',
+    reason: 'nothing worth shaking',
+    results: 0,
+    chars: 0,
+    estimatedSavings: 0,
+    artifactIds: [],
+    contextTokens: null,
+    contextPercent: null,
+    adviseTokens: null,
+  })
+
 })
 
+test('unmarked fallback writes its event before calling the builtin layer', async ($, on) => {
+  const smallMessages: SessionMessage[] = [
+    {
+      role: 'assistant',
+      text: '',
+      toolUses: [{ tool_use_id: 'small', tool: 'Bash', input: {} }],
+    },
+    {
+      role: 'user',
+      text: '',
+      toolUses: [],
+      toolResults: [{ tool_use_id: 'small', text: 'x'.repeat(804), isError: false }],
+    },
+    { role: 'assistant', text: 'x'.repeat(64000), toolUses: [] },
+  ]
+  const writes: Array<{ path: string; text: string }> = []
+  let writesWhenBeneathRuns = -1
+  mock.env(on, { HOME: '/home/example' })
+  mock.clock(on, { now: Date.parse('2026-10-05T00:00:00.000Z') })
+  on('session.id', () => ({ value: 's-1' }))
+  on('tool.register', ($, e) => ({ value: { tool: `mcp__ctrscm__${e.name}` } }))
+  on('command.register', ($, e) => ({ value: { command: e.name } }))
+  on('fs.write', ($, e) => {
+    writes.push({ path: e.path, text: e.text })
+    return { value: undefined }
+  })
+  on('session.start', ($, e) => ({ cwd: e.cwd }))
+  on('session.compact', ($, e) => {
+    writesWhenBeneathRuns = writes.length
+    return { messages: e.messages }
+  })
+  await $.session.start({ cwd: '/work', surface: null, isInteractive: false })
+  expect(await $.session.compact({ trigger: 'auto', messages: smallMessages } as never)).toEqual({
+    messages: smallMessages,
+  })
+  expect(writesWhenBeneathRuns).toBe(1)
+  expect(JSON.parse(writes[0]?.text ?? '')).toEqual({
+    version: 1,
+    at: '2026-10-05T00:00:00.000Z',
+    sessionId: 's-1',
+    agentId: null,
+    event: 'shake',
+    label: 'auto',
+    outcome: 'fallback',
+    reason: 'nothing worth shaking',
+    results: 0,
+    chars: 0,
+    estimatedSavings: 0,
+    artifactIds: [],
+    contextTokens: null,
+    contextPercent: null,
+    adviseTokens: null,
+  })
+})
 test('shake command reports unavailable when recovery registration failed', async ($, on) => {
   on('tool.register', () => {
     throw new Error('registration unavailable')
@@ -551,13 +963,17 @@ test('shake command reports unavailable when recovery registration failed', asyn
 })
 
 test('marked artifact write failure returns its skip reason without calling beneath', async ($, on) => {
+  const writes: string[] = []
   const logs: string[] = []
   let beneath = 0
   mock.env(on, { HOME: '/home/example' })
   mock.clock(on, { now: Date.parse('2026-10-05T00:00:00.000Z') })
+  on('session.id', () => ({ value: 's-1' }))
   on('tool.register', ($, e) => ({ value: { tool: `mcp__ctrscm__${e.name}` } }))
   on('command.register', ($, e) => ({ value: { command: e.name } }))
   on('fs.write', ($, e) => {
+    writes.push(e.path)
+    if (e.path.includes('/usage/')) throw new Error('usage disk full')
     if (e.path.endsWith('/chunk-0000.txt')) throw new Error('disk full')
     return { value: undefined }
   })
@@ -578,7 +994,12 @@ test('marked artifact write failure returns its skip reason without calling bene
       messages,
     } as never),
   ).toEqual({ skip: 'ctrscm: artifact write failed' })
-  expect(logs).toEqual(['CTRSCM: artifact write failed after 0 artifacts: no implementation for fs.write'])
+  expect(logs).toEqual([
+    'CTRSCM: artifact write failed after 0 artifacts: no implementation for fs.write',
+    'CTRSCM: usage log write failed: no implementation for fs.write',
+  ])
+  expect(writes).toHaveLength(2)
+  expect(writes[1]).toContain('/usage/')
   expect(beneath).toBe(0)
 })
 

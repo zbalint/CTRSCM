@@ -10,8 +10,10 @@ export type Config = {
   autoShake: boolean
   triggerPercent: number
   triggerTokens: number
+  adviseTokens: number
   cooldownTurns: number
   aggressiveProtectTokens: number
+  usageLog: boolean
 }
 
 export const DEFAULT_CONFIG: Config = {
@@ -23,9 +25,11 @@ export const DEFAULT_CONFIG: Config = {
   fallback: 'builtin',
   autoShake: true,
   triggerPercent: 50,
-  triggerTokens: 0,
+  triggerTokens: 120000,
+  adviseTokens: 150000,
   cooldownTurns: 3,
   aggressiveProtectTokens: 4000,
+  usageLog: true,
 }
 
 export function parseConfig(options: PluginOptions): { config: Config; problems: string[] } {
@@ -40,6 +44,7 @@ export function parseConfig(options: PluginOptions): { config: Config; problems:
       | 'triggerPercent'
       | 'triggerTokens'
       | 'cooldownTurns'
+      | 'adviseTokens'
       | 'aggressiveProtectTokens',
     minimum: number,
     maximum: number | undefined,
@@ -67,6 +72,7 @@ export function parseConfig(options: PluginOptions): { config: Config; problems:
   config.minResultTokens = numericOption('minResultTokens', 1, undefined, 'must be a safe integer at least 1')
   config.triggerPercent = numericOption('triggerPercent', 1, 99, 'must be a safe integer from 1 to 99')
   config.triggerTokens = numericOption('triggerTokens', 0, undefined, 'must be a safe integer at least 0')
+  config.adviseTokens = numericOption('adviseTokens', 0, undefined, 'must be a safe integer at least 0')
   config.cooldownTurns = numericOption('cooldownTurns', 0, undefined, 'must be a safe integer at least 0')
   config.aggressiveProtectTokens = numericOption(
     'aggressiveProtectTokens',
@@ -82,6 +88,15 @@ export function parseConfig(options: PluginOptions): { config: Config; problems:
     config.autoShake = autoShake.trim().toLowerCase() === 'on'
   } else if (autoShake !== undefined) {
     problems.push('option autoShake: must be "on" or "off"; using the default')
+  }
+
+  const usageLog = options.usageLog
+  if (typeof usageLog === 'boolean') {
+    config.usageLog = usageLog
+  } else if (typeof usageLog === 'string' && (usageLog.trim().toLowerCase() === 'on' || usageLog.trim().toLowerCase() === 'off')) {
+    config.usageLog = usageLog.trim().toLowerCase() === 'on'
+  } else if (usageLog !== undefined) {
+    problems.push('option usageLog: must be "on" or "off"; using the default')
   }
 
   const protectedTools = options.protectedTools

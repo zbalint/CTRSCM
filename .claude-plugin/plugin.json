@@ -12,7 +12,9 @@
     "fallback": { "type": "string", "title": "Shake fallback", "description": "Use built-in compaction or skip when Shake is not applied.", "required": false, "default": "builtin", "options": ["builtin", "skip"] },
     "autoShake": { "type": "string", "title": "Automatic Shake", "description": "Request proactive Shake as the context fills.", "required": false, "default": "on", "options": ["on", "off"] },
     "triggerPercent": { "type": "string", "title": "Context trigger percent", "description": "Context percentage at which proactive Shake is requested.", "required": false, "default": "50" },
-    "triggerTokens": { "type": "string", "title": "Context trigger tokens", "description": "Context token count at which proactive Shake is requested; zero disables this threshold.", "required": false, "default": "0" },
+    "triggerTokens": { "type": "string", "title": "Context trigger tokens", "description": "Context token count at which proactive Shake is requested; zero disables this threshold.", "required": false, "default": "120000" },
+    "adviseTokens": { "type": "string", "title": "Advice threshold tokens", "description": "Context token count at which CTRSCM recommends /compact or a new session; zero disables advice.", "required": false, "default": "150000" },
+    "usageLog": { "type": "string", "title": "Usage log", "description": "Write one count-and-id usage event file under the artifact root for each tracked event.", "required": false, "default": "on", "options": ["on", "off"] },
     "cooldownTurns": { "type": "string", "title": "Shake cooldown", "description": "Measurements to wait between proactive Shake requests.", "required": false, "default": "3" },
     "aggressiveProtectTokens": { "type": "string", "title": "Aggressive protected context", "description": "Estimated tokens protected by a queued or manual aggressive Shake.", "required": false, "default": "4000" }
   }

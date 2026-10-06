@@ -82,6 +82,7 @@ These hold in every spec. A change that breaks one needs an owner decision.
 | `hooks/recover.ts` | The recovery tool's name, schema and call handler |
 | `hooks/trigger.ts` | Pure proactive-trigger decision (thresholds, cooldown, pending `/shake`) and the request markers |
 | `hooks/status.ts` | Pure text of the `/ctrscm` status command |
+| `hooks/usage.ts` | Pure usage-event type and event file path (the log is written by `register.ts`) |
 
 ## Documents
 

@@ -72,9 +72,13 @@ All options are strings in the plugin configuration. Defaults:
 | `fallback` | `builtin` | Use built-in compaction or skip when Shake is not applied. |
 | `autoShake` | `on` | Enable proactive threshold requests. |
 | `triggerPercent` | `50` | Context percentage threshold. |
-| `triggerTokens` | `0` | Context token threshold; `0` disables this threshold. |
+| `triggerTokens` | `120000` | Context token threshold; `0` disables this threshold. |
+| `adviseTokens` | `150000` | Context token threshold for advice; `0` disables advice. |
+| `usageLog` | `on` | Write one count-and-id usage event file per tracked event under the artifact root. |
 | `cooldownTurns` | `3` | Changed-context measurements between proactive requests. |
 | `aggressiveProtectTokens` | `4000` | Estimated recent context protected by `/shake`. |
+
+Usage log files hold counts and ids only (no tool text), with one file per event under `{artifact root}/usage/`. On a 200k window, default `triggerPercent` 50 (100k tokens) fires before `triggerTokens` 120000, which only matters on larger windows; `adviseTokens` 150000 and `triggerTokens` 120000 follow the owner's observation that answer quality degrades from roughly 150k tokens.
 
 `triggerPercent` is a percentage of the model's full context window (200k on the model the live tests used, 1M on the 1M-context models, where the default 50% is 500k tokens and `triggerTokens` is the better knob), not of the engine's automatic compaction window; the engine's own automatic compaction can fire first when its window is smaller (for example `CLAUDE_CODE_AUTO_COMPACT_WINDOW=100000`), in which case the compaction still runs through Shake but not as a proactive request; set `triggerTokens` several thousand tokens (more than one turn's growth) below the engine's threshold when the proactive request should come first. Recovery pages default to 8000 characters and have a maximum of 20000 characters.
 
@@ -84,7 +88,7 @@ A shaken result's placeholder names the tool call it replaced (the tool name and
 
 - `/shake` queues an aggressive Shake pass for the next completed turn. It does not compact
   from inside its own command hook.
-- `/ctrscm` prints the current thresholds, artifact root, session totals, last outcome and
+- `/ctrscm` prints the current thresholds, advice setting, artifact root, usage log location, session totals, last outcome and
   whether an aggressive request is pending.
 
 ## Credits

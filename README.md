@@ -112,7 +112,7 @@ A shaken result's placeholder names the tool call it replaced (the tool name and
 
 - `/shake` queues an aggressive Shake pass for the next completed turn. It does not compact
   from inside its own command hook.
-- `/ctrscm` prints the current thresholds, advice setting, artifact root, usage log location, where the options came from (passed, config file,
+- `/ctrscm` prints the current thresholds, advice setting, the context size now and the engine's own compaction threshold (spec 10; `unavailable` or `unknown` when the engine does not answer), artifact root, usage log location, where the options came from (passed, config file,
   default), the config file path, session totals, last outcome and whether an aggressive request is pending.
 - `/ctrscm report` summarizes the session's turn usage and the cache effect of each Shake pass.
 

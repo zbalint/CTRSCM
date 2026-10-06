@@ -105,12 +105,14 @@ What is known:
 - For the default window (the model's own limit, for example 200k) the threshold was **not measured**; no test ran long enough.
 - The engine reports the figure itself: `$.session.usage({ breakdown: "summary" })` returns `autoCompactThreshold` (the token count
   at which automatic compaction runs, absent when it is off) and `isAutoCompactEnabled` (declarations, `SessionContextBreakdown`).
-  CTRSCM does not read them yet. Making the proactive trigger relative to that figure (for example "this many tokens below the
-  engine's threshold") would remove the guesswork in the table above; it is a candidate for the next spec.
+  Since spec 10, `/ctrscm` reads them (a local estimate, no request) and prints `context:` and `engine compaction:` lines, plus a
+  note when `triggerTokens` is at or above the threshold. Whether the live engine answers from a command hook, and the real threshold
+  for the default window, are still to be read from a live `/ctrscm` (backlog B25). Making the proactive trigger relative to that
+  figure (for example "this many tokens below the engine's threshold") is a candidate for a later spec, once the figure is known.
 
 ## Commands
 
-- `/ctrscm` prints the configuration in effect, the artifact directory, this session's totals (passes, results shaken,
+- `/ctrscm` prints the configuration in effect, the context size and the engine's compaction threshold, the artifact directory, this session's totals (passes, results shaken,
   estimated tokens saved) and the last outcome.
 - `/ctrscm report` prints the session's turn counts and the estimated cache effect of each Shake pass (spec 8).
 - `/shake` queues an aggressive pass; it runs when the next turn completes.

@@ -114,7 +114,7 @@ What is known:
 
 - `/ctrscm` prints the configuration in effect, the context size and the engine's compaction threshold, the artifact directory, this session's totals (passes, results shaken,
   estimated tokens saved) and the last outcome.
-- `/ctrscm report` prints the session's turn counts and the estimated cache effect of each Shake pass (spec 8).
+- `/ctrscm report` prints the session's turn counts and the estimated cache effect of each Shake pass (spec 8). Since spec 11 each pass line is followed by a `measured:` line (context drop from the turn events' `contextTokens`, the extra cache write of the first turn after, and a pay-back in turns at assumed list-price ratios, write 2x and read 0.1x), shown once at least one turn before and two after carry a context figure. The first shook pass after the mod loads also logs a one-line hint that the report exists.
 - `/shake` queues an aggressive pass; it runs when the next turn completes.
 - `/compact` keeps its normal meaning; with custom instructions it always goes to the built-in summarizer.
 

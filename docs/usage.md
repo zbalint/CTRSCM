@@ -46,7 +46,7 @@ Options are strings (defaults and meaning in the README options table). The rout
         "cooldownTurns": "3",
         "protectTokens": "16000",
         "minSavings": "4000",
-        "minResultTokens": "200",
+        "minResultTokens": "1000",
         "aggressiveProtectTokens": "4000",
         "protectedTools": "Skill",
         "fallback": "builtin",

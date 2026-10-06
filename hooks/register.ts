@@ -78,6 +78,8 @@ export function register(on: On, options: PluginOptions): void {
   let isRecoverReady = false
   let problemsLogged = false
   let cooldown = 0
+  // shortcut: once per registration; make it periodic or per session if a cadence is wanted.
+  let passHintShown = false
   let isPending = false
   let isRequesting = false
   let wanted: Request | undefined
@@ -509,6 +511,10 @@ export function register(on: On, options: PluginOptions): void {
     $.ui.log(`CTRSCM: shook ${selection.selected.length} tool results (~${selection.savings} estimated tokens)`)
     if (request !== undefined || trackedTrigger) {
       stats.passes += 1
+      if (!passHintShown) {
+        $.ui.log('CTRSCM: a pass just ran; after a few more turns /ctrscm report shows what it saved')
+        passHintShown = true
+      }
       stats.results += selection.selected.length
       stats.savings += selection.savings
       const label = request ?? e.trigger

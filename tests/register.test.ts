@@ -126,7 +126,10 @@ test('session start registers recovery, auto compaction writes artifacts, and re
     contextPercent: null,
     adviseTokens: null,
   })
-  expect(logs).toEqual(['CTRSCM: shook 1 tool results (~19960 estimated tokens)'])
+  expect(logs).toEqual([
+    'CTRSCM: shook 1 tool results (~19960 estimated tokens)',
+    'CTRSCM: a pass just ran; after a few more turns /ctrscm report shows what it saved',
+  ])
 
   const recovered = await $.tool.call({
     tool: RECOVER_TOOL,
@@ -209,12 +212,14 @@ test('a usage event write failure does not change a successful compaction', asyn
   expect(writes[2]).toContain('/usage/')
   expect(logs).toEqual([
     'CTRSCM: shook 1 tool results (~19960 estimated tokens)',
+    'CTRSCM: a pass just ran; after a few more turns /ctrscm report shows what it saved',
     'CTRSCM: usage log write failed: no implementation for fs.write',
   ])
 })
 
 test('marked proactive transcript writes a literal shake usage event', async ($, on) => {
   const writes: Array<{ path: string; text: string }> = []
+  const logs: string[] = []
   mock.env(on, { HOME: '/home/example' })
   mock.clock(on, { now: Date.parse('2026-10-05T00:00:00.000Z') })
   on('session.id', () => ({ value: 's-1' }))
@@ -222,6 +227,10 @@ test('marked proactive transcript writes a literal shake usage event', async ($,
   on('command.register', ($, e) => ({ value: { command: e.name } }))
   on('fs.write', ($, e) => {
     writes.push({ path: e.path, text: e.text })
+    return { value: undefined }
+  })
+  on('ui.log', ($, e) => {
+    logs.push(e.text)
     return { value: undefined }
   })
   on('session.start', ($, e) => ({ cwd: e.cwd }))
@@ -263,16 +272,25 @@ test('marked proactive transcript writes a literal shake usage event', async ($,
     contextPercent: null,
     adviseTokens: null,
   })
+  expect(logs).toEqual([
+    'CTRSCM: shook 1 tool results (~19960 estimated tokens)',
+    'CTRSCM: a pass just ran; after a few more turns /ctrscm report shows what it saved',
+  ])
 })
 
 test('precompute and instructed manual compaction use their mandated paths', async ($, on) => {
   let beneath = 0
   const writes: string[] = []
+  const logs: string[] = []
   mock.env(on, { HOME: '/home/example' })
   mock.clock(on, { now: Date.parse('2026-10-05T00:00:00.000Z') })
   on('session.id', () => ({ value: 's-1' }))
   on('fs.write', ($, e) => {
     writes.push(e.path)
+    return { value: undefined }
+  })
+  on('ui.log', ($, e) => {
+    logs.push(e.text)
     return { value: undefined }
   })
   on('session.compact', ($, e) => {
@@ -290,6 +308,7 @@ test('precompute and instructed manual compaction use their mandated paths', asy
   expect(manual).toEqual({ messages })
   expect(beneath).toBe(1)
   expect(writes).toEqual([])
+  expect(logs).toEqual([])
 })
 
 test('failed recovery registration and artifact root use the builtin fallback', async ($, on) => {
@@ -833,6 +852,10 @@ test('aggressive and proactive marked passes use their distinct protected tails'
     toolResults: [expect.objectContaining({ text: expect.stringContaining(PLACEHOLDER_PREFIX) })],
   }))
   expect(logs).toContain('CTRSCM: shook 2 tool results (~39920 estimated tokens)')
+  expect(logs).toEqual([
+    'CTRSCM: shook 2 tool results (~39920 estimated tokens)',
+    'CTRSCM: a pass just ran; after a few more turns /ctrscm report shows what it saved',
+  ])
   const proactive = await $.session.compact({
     trigger: 'plugin',
     instructions: PROACTIVE_MARK,
@@ -846,6 +869,11 @@ test('aggressive and proactive marked passes use their distinct protected tails'
   }))
   expect(proactive.messages[4]).toEqual(proactiveMessages[4])
   expect(logs).toContain('CTRSCM: shook 1 tool results (~19960 estimated tokens)')
+  expect(logs).toEqual([
+    'CTRSCM: shook 2 tool results (~39920 estimated tokens)',
+    'CTRSCM: a pass just ran; after a few more turns /ctrscm report shows what it saved',
+    'CTRSCM: shook 1 tool results (~19960 estimated tokens)',
+  ])
 
 
   const status = await $.command.run(commandRunInput('ctrscm'))

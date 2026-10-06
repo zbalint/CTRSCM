@@ -1117,8 +1117,12 @@ test('a refused measure defers proactive compaction without reporting a failed p
   await h.complete()
   expect(h.requests).toEqual([PROACTIVE_MARK])
   expect(h.logs).toEqual(['CTRSCM: retrying proactive shake at turn end'])
-  expect(h.writes).toHaveLength(1)
-  expect(JSON.parse(h.writes[0]?.text ?? '')).toEqual(expect.objectContaining({
+  expect(h.writes).toHaveLength(2)
+  expect(JSON.parse(h.writes[0]?.text ?? '')).toEqual(expect.objectContaining({ event: 'turn' }))
+  const turnAt = JSON.parse(h.writes[0]?.text ?? '').at
+  const shakeAt = JSON.parse(h.writes[1]?.text ?? '').at
+  expect(turnAt <= shakeAt).toBe(true)
+  expect(JSON.parse(h.writes[1]?.text ?? '')).toEqual(expect.objectContaining({
     event: 'shake',
     label: 'proactive',
     outcome: 'skipped',
@@ -1147,8 +1151,8 @@ test('a second rejection at turn end records failure and consumes the deferred r
     'CTRSCM: retrying proactive shake at turn end',
     'CTRSCM: proactive shake failed: no implementation for session.compact',
   ])
-  expect(h.writes).toHaveLength(1)
-  expect(JSON.parse(h.writes[0]?.text ?? '')).toEqual({
+  expect(h.writes).toHaveLength(2)
+  expect(JSON.parse(h.writes[1]?.text ?? '')).toEqual({
     version: 1,
     at: '2026-10-06T00:00:00.000Z',
     sessionId: 's-1',
@@ -1195,8 +1199,8 @@ test('a refused aggressive request is restored until turn-end failure and never 
     'CTRSCM: retrying aggressive shake at turn end',
     'CTRSCM: aggressive shake failed: no implementation for session.compact',
   ])
-  expect(h.writes).toHaveLength(1)
-  expect(JSON.parse(h.writes[0]?.text ?? '')).toEqual(expect.objectContaining({
+  expect(h.writes).toHaveLength(2)
+  expect(JSON.parse(h.writes[1]?.text ?? '')).toEqual(expect.objectContaining({
     event: 'shake',
     label: 'aggressive',
     outcome: 'failed',
@@ -1225,8 +1229,8 @@ test('a queued shake upgrades a deferred proactive request at turn end', {
   await h.complete()
   expect(h.requests).toEqual([AGGRESSIVE_MARK])
   expect(h.logs).toEqual(['CTRSCM: retrying aggressive shake at turn end'])
-  expect(h.writes).toHaveLength(1)
-  expect(JSON.parse(h.writes[0]?.text ?? '')).toEqual(expect.objectContaining({
+  expect(h.writes).toHaveLength(2)
+  expect(JSON.parse(h.writes[1]?.text ?? '')).toEqual(expect.objectContaining({
     event: 'shake',
     label: 'aggressive',
     outcome: 'skipped',
@@ -1301,3 +1305,164 @@ test('a measurement while requesting does not make a second request or advice', 
 })
 
 
+
+test('turn.complete writes count-only turn usage with entry context and latest measured cost', async ($, on) => {
+  const writes: Array<{ path: string; text: string }> = []
+  mock.env(on, { HOME: '/home/example' })
+  mock.clock(on, { now: Date.parse('2026-10-06T00:00:00.000Z') })
+  on('session.id', () => ({ value: 's-1' }))
+  on('fs.write', ($, e) => {
+    writes.push({ path: e.path, text: e.text })
+    return { value: undefined }
+  })
+  on('session.measure', ($, e) => ({ changed: e.changed }))
+  on('turn.complete', () => ({ text: 'answer kept' }))
+  await $.session.measure({
+    context: { window: 200000, tokens: 1234, percent: 1 },
+    cost: { usd: 0.5 },
+    rateLimits: [],
+    changed: ['context', 'cost'],
+  })
+  await $.turn.complete({
+    answer: '',
+    durationMs: 1,
+    isAborted: false,
+    turnId: 't-1',
+    reason: 'answer',
+    usage: {
+      input_tokens: 10,
+      output_tokens: 20,
+      cache_creation_input_tokens: 30,
+      cache_read_input_tokens: 40,
+      model: 'model-a',
+    },
+  } as never)
+  expect(writes).toHaveLength(1)
+  expect(JSON.parse(writes[0]?.text ?? '')).toEqual({
+    version: 1,
+    at: '2026-10-06T00:00:00.000Z',
+    sessionId: 's-1',
+    agentId: null,
+    event: 'turn',
+    reason: 'answer',
+    model: 'model-a',
+    inputTokens: 10,
+    outputTokens: 20,
+    cacheCreationTokens: 30,
+    cacheReadTokens: 40,
+    contextTokens: 1234,
+    contextPercent: 1,
+    sessionCostUsd: 0.5,
+  })
+  writes.length = 0
+  await $.turn.complete({
+    answer: '',
+    durationMs: 1,
+    isAborted: false,
+    turnId: 't-2',
+    reason: 'error',
+  } as never)
+  expect(JSON.parse(writes[0]?.text ?? '')).toEqual({
+    version: 1,
+    at: '2026-10-06T00:00:00.000Z',
+    sessionId: 's-1',
+    agentId: null,
+    event: 'turn',
+    reason: 'error',
+    model: null,
+    inputTokens: null,
+    outputTokens: null,
+    cacheCreationTokens: null,
+    cacheReadTokens: null,
+    contextTokens: 1234,
+    contextPercent: 1,
+    sessionCostUsd: 0.5,
+  })
+})
+
+test('ctrscm report reads the current session and leaves the default command unchanged', async ($, on) => {
+  const root = '/home/example/.ctrscm/artifacts'
+  const writes: Record<string, string> = {
+    [`${root}/usage/01.json`]: JSON.stringify({
+      version: 1,
+      at: '2026-10-06T00:00:00.000Z',
+      sessionId: 's-1',
+      agentId: null,
+      event: 'turn',
+      reason: 'answer',
+      model: 'model-a',
+      inputTokens: 10,
+      outputTokens: 20,
+      cacheCreationTokens: 30,
+      cacheReadTokens: 40,
+      contextTokens: null,
+      contextPercent: null,
+      sessionCostUsd: null,
+    }),
+    [`${root}/usage/02.json`]: JSON.stringify({
+      version: 1,
+      at: '2026-10-06T00:00:01.000Z',
+      sessionId: 's-2',
+      agentId: null,
+      event: 'turn',
+      reason: 'answer',
+      model: 'model-a',
+      inputTokens: 10,
+      outputTokens: 20,
+      cacheCreationTokens: 30,
+      cacheReadTokens: 40,
+      contextTokens: null,
+      contextPercent: null,
+      sessionCostUsd: null,
+    }),
+  }
+  mock.env(on, { HOME: '/home/example' })
+  on('session.id', () => ({ value: 's-1' }))
+  on('fs.list', () => ({
+    value: [
+      { name: '01.json', kind: 'file', size: 1, isLink: false },
+      { name: '02.json', kind: 'file', size: 1, isLink: false },
+    ],
+  }))
+  on('fs.read', ($, e) => {
+    const text = writes[e.path]
+    if (text === undefined) throw new Error('missing')
+    return { value: text }
+  })
+  on('session.measure', ($, e) => ({ changed: e.changed }))
+  await $.session.measure({
+    context: { window: 200000, tokens: 1000, percent: 1 },
+    cost: { usd: 0.5 },
+    rateLimits: [],
+    changed: ['context', 'cost'],
+  })
+  const report = await $.command.run(commandRunInput('ctrscm', 'report'))
+  expect(report.text).toContain('CTRSCM report, session s-1: 1 turn events, 0 shook passes')
+  expect(report.text).toContain('totals, main loop: 1 turns, 20 output tokens, 30 cache creation tokens, 40 cache read tokens')
+  expect((await $.command.run(commandRunInput('ctrscm'))).text).toContain('CTRSCM status')
+})
+
+test('ctrscm report returns fixed errors for unavailable roots, session ids and usage directories', async ($, on) => {
+  let homeAvailable = false
+  let rejectSessionId = true
+  let rejectList = true
+  on('env.get', () => {
+    if (!homeAvailable) throw new Error('HOME unavailable')
+    return { value: '/home/example' }
+  })
+  on('session.id', () => {
+    if (rejectSessionId) throw new Error('id unavailable')
+    return { value: 's-1' }
+  })
+  on('fs.list', () => {
+    if (rejectList) throw new Error('usage directory missing')
+    return { value: [] }
+  })
+  expect((await $.command.run(commandRunInput('ctrscm', 'report'))).text).toBe('CTRSCM report: usage log unavailable')
+  homeAvailable = true
+  expect((await $.command.run(commandRunInput('ctrscm', 'report'))).text).toBe('CTRSCM report: session id unavailable')
+  rejectSessionId = false
+  expect((await $.command.run(commandRunInput('ctrscm', 'report'))).text).toBe(
+    'CTRSCM report: no usage events yet (no implementation for fs.list)',
+  )
+})

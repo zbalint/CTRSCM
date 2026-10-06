@@ -10,7 +10,9 @@ import {
 } from './shake'
 import { statusText, type Stats } from './status'
 import { decideAdvice, decideRequest, markOf, requestOf, type Request } from './trigger'
-import { usageEventPath, type UsageEvent } from './usage'
+import { reportText } from './report'
+import { usageEventPath, type TurnUsageEvent, type UsageEvent } from './usage'
+import { readUsageEvents } from './usageLog'
 
 function rootOf(artifactDir: string | undefined, home: string | undefined): string | undefined {
   if (artifactDir !== undefined) return artifactDir
@@ -30,7 +32,7 @@ type UsageWriteOperations = {
 async function writeUsageEvent(
   enabled: boolean,
   root: string | undefined,
-  event: Omit<UsageEvent, 'version' | 'at' | 'sessionId'>,
+  event: Omit<UsageEvent, 'version' | 'at' | 'sessionId'> | Omit<TurnUsageEvent, 'version' | 'at' | 'sessionId'>,
   operations: UsageWriteOperations,
 ): Promise<void> {
   if (!enabled || root === undefined) return
@@ -76,6 +78,7 @@ export function register(on: On, options: PluginOptions): void {
   let wanted: Request | undefined
   let adviceCooldown = 0
   let lastContext: { tokens: number | null; percent: number | null } = { tokens: null, percent: null }
+  let lastCostUsd: number | null = null
   const stats: Stats = { passes: 0, results: 0, savings: 0, last: 'none yet' }
 
   on('session.start', async ($, e, next) => {
@@ -121,7 +124,36 @@ export function register(on: On, options: PluginOptions): void {
     return { text: 'CTRSCM: aggressive shake queued; it runs when the next turn completes' }
   })
 
-  on('command.run', { command: 'ctrscm' }, async ($) => {
+  on('command.run', { command: 'ctrscm' }, async ($, e) => {
+    if (e.args.trim() === 'report') {
+      let root: string | undefined
+      try {
+        const home = config.artifactDir === undefined ? await $.env.get('HOME') : undefined
+        root = rootOf(config.artifactDir, home)
+      } catch {
+        return { text: 'CTRSCM report: usage log unavailable' }
+      }
+      if (root === undefined) return { text: 'CTRSCM report: usage log unavailable' }
+      let sessionId: string
+      try {
+        sessionId = await $.session.id()
+      } catch {
+        return { text: 'CTRSCM report: session id unavailable' }
+      }
+      try {
+        const result = await readUsageEvents(
+          {
+            list: (path) => $.fs.list(path),
+            read: (path) => $.fs.read(path),
+          },
+          root,
+          sessionId,
+        )
+        return { text: reportText(result.events, sessionId, result.skipped, lastCostUsd) }
+      } catch (error) {
+        return { text: `CTRSCM report: no usage events yet (${errorMessage(error)})` }
+      }
+    }
     let root: string | undefined
     try {
       const home = config.artifactDir === undefined ? await $.env.get('HOME') : undefined
@@ -133,6 +165,7 @@ export function register(on: On, options: PluginOptions): void {
   })
 
   on('session.measure', async ($, e, next) => {
+    lastCostUsd = e.cost?.usd ?? null
     if (e.changed.includes('context')) {
       lastContext = {
         tokens: e.context.tokens ?? null,
@@ -197,7 +230,35 @@ export function register(on: On, options: PluginOptions): void {
     return next(e)
   })
   on('turn.complete', async ($, e, next) => {
+    const turnContext = { tokens: lastContext.tokens, percent: lastContext.percent }
+    const turnCostUsd = lastCostUsd
     const result = await next(e)
+    if (config.usageLog) {
+      const root = await quietRoot(config.artifactDir, () => $.env.get('HOME'), (text) => $.ui.log(text))
+      await writeUsageEvent(
+        config.usageLog,
+        root,
+        {
+          agentId: e.agentId ?? null,
+          event: 'turn',
+          reason: e.reason,
+          model: e.usage?.model ?? null,
+          inputTokens: e.usage?.input_tokens ?? null,
+          outputTokens: e.usage?.output_tokens ?? null,
+          cacheCreationTokens: e.usage?.cache_creation_input_tokens ?? null,
+          cacheReadTokens: e.usage?.cache_read_input_tokens ?? null,
+          contextTokens: turnContext.tokens,
+          contextPercent: turnContext.percent,
+          sessionCostUsd: turnCostUsd,
+        },
+        {
+          now: () => $.clock.now(),
+          sessionId: () => $.session.id(),
+          write: (path, text) => $.fs.write(path, text),
+          log: (text) => $.ui.log(text),
+        },
+      )
+    }
     if (wanted === undefined || isRequesting || e.reason !== 'answer' || e.agentId !== undefined) return result
     const request = isPending ? 'aggressive' : wanted
     wanted = undefined

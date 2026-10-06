@@ -80,6 +80,8 @@ All options are strings in the plugin configuration. Defaults:
 
 Usage log files hold counts and ids only (no tool text), with one file per event under `{artifact root}/usage/`. On a 200k window, default `triggerPercent` 50 (100k tokens) fires before `triggerTokens` 120000, which only matters on larger windows; `adviseTokens` 150000 and `triggerTokens` 120000 follow the owner's observation that answer quality degrades from roughly 150k tokens.
 
+`/ctrscm report` summarizes the current session's turn counts and estimated per-pass prompt and cache changes.
+
 `triggerPercent` is a percentage of the model's full context window (200k on the model the live tests used, 1M on the 1M-context models, where the default 50% is 500k tokens and `triggerTokens` is the better knob), not of the engine's automatic compaction window; the engine's own automatic compaction can fire first when its window is smaller (for example `CLAUDE_CODE_AUTO_COMPACT_WINDOW=100000`), in which case the compaction still runs through Shake but not as a proactive request; set `triggerTokens` several thousand tokens (more than one turn's growth) below the engine's threshold when the proactive request should come first. Recovery pages default to 8000 characters and have a maximum of 20000 characters.
 
 ## Commands

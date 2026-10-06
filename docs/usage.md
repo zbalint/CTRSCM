@@ -18,6 +18,18 @@ This loads the plugin for that session only. Nothing is installed and no persist
 ships no marketplace; `claude plugin list` shows nothing for a `--plugin-dir` plugin, so `claude plugin configure ctrscm`
 and `claude plugin enable` have nothing to act on today.
 
+## Quick start with the 150k example
+
+```sh
+cd /home/zbalint/workspace/CTRSCM   # or any directory; the paths below are absolute
+claude --plugin-dir /home/zbalint/workspace/CTRSCM --settings /home/zbalint/workspace/CTRSCM/docs/examples/ctrscm-150k.json
+```
+
+The example (`docs/examples/ctrscm-150k.json`) requests a proactive Shake pass at 150000 tokens (`triggerPercent` 99 so the percentage trigger never
+comes first), advice at 250000 tokens, the usual 16000-token protected tail and the usage log on. Type `/ctrscm` first: it must show
+`auto: on (trigger 99% or 150000 tokens, ...)` and `advice: at 250000 tokens`. The live tests ran this file with `--setting-sources ''`
+(isolation); combining `--settings` with your normal settings was not run, so if `/ctrscm` shows other numbers, the file was not picked up.
+
 ## Configuring it
 
 Options are strings (defaults and meaning in the README options table). The route that was run: a settings file with

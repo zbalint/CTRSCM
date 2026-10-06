@@ -9,7 +9,7 @@ import {
   rebuild,
   selectResults,
 } from './shake'
-import { statusText, type OptionSources, type Stats } from './status'
+import { statusText, type EngineStatus, type OptionSources, type Stats } from './status'
 import { decideAdvice, decideRequest, markOf, requestOf, type Request } from './trigger'
 import { reportText } from './report'
 import { usageEventPath, type TurnUsageEvent, type UsageEvent } from './usage'
@@ -194,7 +194,30 @@ export function register(on: On, options: PluginOptions): void {
     } catch {
       root = undefined
     }
-    return { text: statusText(config, root, stats, isPending, optionSources) }
+    let engine: EngineStatus
+    try {
+      const usage = await $.session.usage({ breakdown: 'summary' })
+      const context = usage.context
+      engine = {
+        kind: 'ok',
+        window: context.window,
+        ...(context.tokens === undefined ? {} : { tokens: context.tokens }),
+        ...(context.percent === undefined ? {} : { percent: context.percent }),
+        ...(context.breakdown === undefined
+          ? {}
+          : {
+              autoCompact: {
+                isEnabled: context.breakdown.isAutoCompactEnabled,
+                ...(context.breakdown.autoCompactThreshold === undefined
+                  ? {}
+                  : { threshold: context.breakdown.autoCompactThreshold }),
+              },
+            }),
+      }
+    } catch (error) {
+      engine = { kind: 'unavailable', reason: errorMessage(error) }
+    }
+    return { text: statusText(config, root, stats, isPending, optionSources, engine) }
   })
 
   on('session.measure', async ($, e, next) => {

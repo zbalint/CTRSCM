@@ -1,5 +1,5 @@
 import { expect, mock, test, type Engine, type Plugin } from 'claude-code/testing'
-import type { On, SessionMeasureInput, SessionMessage, TurnCompleteInput } from 'claude-code'
+import type { On, SessionMeasureInput, SessionMessage, SessionUsage, TurnCompleteInput } from 'claude-code'
 import { isArtifactId } from '../hooks/artifacts'
 import { PLACEHOLDER_PREFIX, RECOVER_TOOL } from '../hooks/shake'
 import { AGGRESSIVE_MARK, PROACTIVE_MARK } from '../hooks/trigger'
@@ -500,6 +500,80 @@ test('session measure registers commands, triggers proactive Shake, and reports 
   expect(status.text).toContain('last: proactive skipped: no transcript')
   expect(status.text).toContain('options: 0 passed, 0 from file, 13 default')
   expect(status.text).toContain('config file: none')
+})
+
+test('ctrscm status reports the engine context and compaction threshold', async ($, on) => {
+  const requests: Array<{ breakdown?: string }> = []
+  const logs: string[] = []
+  const usage: SessionUsage = {
+    context: {
+      window: 200000,
+      tokens: 50000,
+      percent: 25,
+      breakdown: {
+        categories: [],
+        totalTokens: 50000,
+        maxTokens: 100000,
+        rawMaxTokens: 100000,
+        autocompactSource: 'model-default',
+        percentage: 50,
+        gridRows: [],
+        model: 'claude-test',
+        memoryFiles: [],
+        mcpTools: [],
+        agents: [],
+        autoCompactThreshold: 100000,
+        isAutoCompactEnabled: true,
+        apiUsage: null,
+      },
+    },
+    rateLimits: [],
+  }
+  mock.env(on, { HOME: '/home/example' })
+  on('session.usage', ($, e) => {
+    requests.push(e)
+    return { value: usage }
+  })
+  on('tool.register', ($, e) => ({ value: { tool: `mcp__ctrscm__${e.name}` } }))
+  on('command.register', ($, e) => ({ value: { command: e.name } }))
+  on('ui.log', ($, e) => {
+    logs.push(e.text)
+    return { value: undefined }
+  })
+  on('session.start', ($, e) => ({ cwd: e.cwd }))
+
+  await $.session.start({ cwd: '/work', surface: null, isInteractive: false })
+  const status = await $.command.run(commandRunInput('ctrscm'))
+
+  expect(requests).toEqual([{ breakdown: 'summary' }])
+  expect(status.text).toContain('context: 50000 tokens (25% of 200000)')
+  expect(status.text).toContain('engine compaction: auto at 100000 tokens')
+  expect(status.text).toContain(
+    'note: trigger tokens (120000) are at or above the engine threshold (100000); the engine may compact first',
+  )
+  expect(logs).toEqual([])
+})
+
+test('ctrscm status reports unavailable engine usage without logging', async ($, on) => {
+  const logs: string[] = []
+  mock.env(on, { HOME: '/home/example' })
+  on('session.usage', () => {
+    throw new Error('usage unavailable')
+  })
+  on('tool.register', ($, e) => ({ value: { tool: `mcp__ctrscm__${e.name}` } }))
+  on('command.register', ($, e) => ({ value: { command: e.name } }))
+  on('ui.log', ($, e) => {
+    logs.push(e.text)
+    return { value: undefined }
+  })
+  on('session.start', ($, e) => ({ cwd: e.cwd }))
+
+  await $.session.start({ cwd: '/work', surface: null, isInteractive: false })
+  const status = await $.command.run(commandRunInput('ctrscm'))
+
+  expect(status.text).toContain('context: unavailable (no implementation for session.usage)')
+  expect(status.text).toContain('engine compaction: unavailable')
+  expect(logs).toEqual([])
 })
 
 test('advice sequence follows request and advice cooldowns with literal events', async ($, on) => {
@@ -1506,4 +1580,20 @@ test('ctrscm report returns fixed errors for unavailable roots, session ids and 
   expect((await $.command.run(commandRunInput('ctrscm', 'report'))).text).toBe(
     'CTRSCM report: no usage events yet (no implementation for fs.list)',
   )
+})
+
+test('ctrscm report does not read engine usage', async ($, on) => {
+  let usageCalls = 0
+  mock.env(on, { HOME: '/home/example' })
+  on('session.usage', () => {
+    usageCalls += 1
+    throw new Error('usage should not be called')
+  })
+  on('session.id', () => ({ value: 's-1' }))
+  on('fs.list', () => ({ value: [] }))
+
+  const report = await $.command.run(commandRunInput('ctrscm', 'report'))
+
+  expect(report.text).toContain('CTRSCM report, session s-1')
+  expect(usageCalls).toBe(0)
 })

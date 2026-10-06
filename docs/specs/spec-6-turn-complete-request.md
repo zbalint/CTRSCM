@@ -113,7 +113,7 @@ rg -n "node:|: any\b|as any|eval\(|import\(|@ts-" hooks tests   # no output
 git status --short   # only the two files named in section 0
 ```
 
-Further bars: `hooks/trigger.ts` and the other hooks files byte-identical to the base commit; no `session.compact` call remains inside the `session.measure` hook.
+Further bars: `hooks/trigger.ts` and the other hooks files byte-identical to the base commit; the `session.measure` hook still makes the immediate `$.session.compact` attempt (D1) and only its rejection handling changes (Amendment 1).
 Live (an owner session where a measurement arrives mid-turn, the usage log shows `shook` instead of `failed`) is a tester's check afterwards.
 
 ## 9. Consultant review dispositions (`m_608`)
@@ -130,3 +130,11 @@ check is interactive only. Not probed: a queued prompt at turn end, an aborted t
 the `requesting` log strings are unchanged by this spec (steps 5 and 10: no rename, no changed constant); D1 to D5, sections 3, 4 and 5 and backlog B22 agree (step 7); worked cases: `/shake` rejected at measure then
 accepted at turn end; proactive deferred then upgraded by `/shake`; both end with `isPending` false and `cooldown` equal to `cooldownTurns` (step 8). Section 5 cases marked `R` depend on a rejection seam in
 `claude/testing` that nobody has confirmed (step 9): if the developer finds none, they are reported as not testable and the architect checks them live.
+
+## Amendment 1 (2026-10-06, after `BLOCKED` `m_617`)
+
+1. Section 7, last paragraph: the bar "no `session.compact` call remains inside the `session.measure` hook" came from the first draft and contradicts D1, sections 3 and 4. It is replaced by the text now in section 7:
+   the immediate attempt stays, only its rejection handling changes. D1, section 3 and section 4 govern.
+2. The rejection seam (section 5, cases `R`): the testing module exposes `Plugin` with a `tier` (`types/claude-code.d.ts:12278-12293`) and `tier(...)` (`:12360-12365`). A test may load an inline plugin at a tier outside the mod's
+   (for example `prepend`) whose `session.compact` hook rejects while armed and otherwise calls `next`. The developer finds the exact form; only if none works are the `R` cases reported as not testable.
+3. Gate re-run on the amendment: `rg` for the old wording shows no other occurrence; D1 to D5, sections 3 to 5 and section 7 now agree; scope (two files) unchanged.

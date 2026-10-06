@@ -264,3 +264,15 @@ Compaction replays informational messages under new ids, so the raw session file
 Any model with a 1M-token window (all live runs used Haiku 4.5 with a 200k window), sessions near 150k tokens or more, V3 as a controlled cache experiment with equal reads, V5, V6, an image inside a rebuilt mixed message, a proactive
 request that skips (L3), built-in Q4 and Q5, a plain (non-fork) `--resume` of a shaken session, a persistent install, advice repeating after cooldown,
 `usageLog` off, an unwritable log.
+
+## Round 8: spec 9 (config file), owner's session
+
+Reported by the owner and read from `/ctrscm` output on 2026-10-06; not a scripted launch. The installed mod was updated, then a new session started with no options passed.
+
+| Observation | Result |
+| --- | --- |
+| Option sources | `options: 0 passed, 11 from file, 2 default` |
+| Config path | `/home/zbalint/.ctrscm/config.json` |
+| Effective values | trigger 99% or 150000 tokens, cooldown 3 turns, advice at 300000, protect 20000, aggressive protect 4000, min savings 4000, min result 200, protected tools `Skill`, usage log on |
+
+Caveats: the values were not compared with the file's contents (the file was not read), and no shake pass ran in this check. Not exercised: how the engine's option UI renders `fallback`, `autoShake` and `usageLog` now that the manifest defaults are gone (spec 9 removed them).

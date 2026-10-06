@@ -9,6 +9,7 @@ test('statusText renders the complete active status block', () => {
       '/home/example/.ctrscm/artifacts',
       { passes: 2, results: 3, savings: 12000, last: 'proactive shook 2 results (~8000 estimated tokens)' },
       true,
+      { passed: 0, fromFile: 0, path: undefined },
     ),
   ).toBe(
     'CTRSCM status\n' +
@@ -18,6 +19,8 @@ test('statusText renders the complete active status block', () => {
       'protected tools: Skill\n' +
       'artifacts: /home/example/.ctrscm/artifacts\n' +
       'usage log: on (/home/example/.ctrscm/artifacts/usage)\n' +
+      'options: 0 passed, 0 from file, 13 default\n' +
+      'config file: none\n' +
       'this session: 2 passes, 3 results shaken, ~12000 estimated tokens saved\n' +
       'last: proactive shook 2 results (~8000 estimated tokens)\n' +
       'pending: aggressive shake',
@@ -31,6 +34,7 @@ test('statusText renders unavailable and disabled settings', () => {
       undefined,
       { passes: 0, results: 0, savings: 0, last: 'none yet' },
       false,
+      { passed: 0, fromFile: 0, path: undefined },
     ),
   ).toBe(
     'CTRSCM status\n' +
@@ -40,6 +44,8 @@ test('statusText renders unavailable and disabled settings', () => {
       'protected tools: none\n' +
       'artifacts: unavailable (no HOME)\n' +
       'usage log: on (unavailable (no HOME))\n' +
+      'options: 0 passed, 0 from file, 13 default\n' +
+      'config file: none\n' +
       'this session: 0 passes, 0 results shaken, ~0 estimated tokens saved\n' +
       'last: none yet\n' +
       'pending: none',
@@ -53,6 +59,7 @@ test('statusText renders disabled advice and usage logging', () => {
       '/home/example/.ctrscm/artifacts/',
       { passes: 0, results: 0, savings: 0, last: 'none yet' },
       false,
+      { passed: 0, fromFile: 0, path: '/home/example/.ctrscm/config.json' },
     ),
   ).toContain('advice: at 0 tokens, 0 = off\n')
   expect(statusText(
@@ -60,5 +67,6 @@ test('statusText renders disabled advice and usage logging', () => {
     '/home/example/.ctrscm/artifacts/',
     { passes: 0, results: 0, savings: 0, last: 'none yet' },
     false,
+    { passed: 0, fromFile: 0, path: '/home/example/.ctrscm/config.json' },
   )).toContain('usage log: off (/home/example/.ctrscm/artifacts/usage)')
 })

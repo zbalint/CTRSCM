@@ -1,5 +1,5 @@
 import { expect, test } from 'claude-code/testing'
-import { DEFAULT_CONFIG, parseConfig } from '../hooks/config'
+import { DEFAULT_CONFIG, mergeOptions, parseConfig } from '../hooks/config'
 
 test('empty options retain the contract defaults', () => {
   expect(parseConfig({})).toEqual({
@@ -64,12 +64,13 @@ test('safe integer numeric boundaries are accepted or rejected', () => {
   })
 })
 
-test('protected tool arrays and an empty string are preserved intentionally', () => {
+test('protected tool arrays are preserved and a blank string leaves Skill protected', () => {
   expect(parseConfig({ protectedTools: ['Read', 'Bash'] }).config.protectedTools).toEqual([
     'Read',
     'Bash',
   ])
-  expect(parseConfig({ protectedTools: '' }).config.protectedTools).toEqual([])
+  expect(parseConfig({ protectedTools: '' }).config.protectedTools).toEqual(['Skill'])
+  expect(parseConfig({ protectedTools: 'none' }).config.protectedTools).toEqual([])
 })
 
 test('invalid numeric values keep defaults and report one problem each', () => {
@@ -165,5 +166,53 @@ test('invalid fallback keeps builtin and reports one problem', () => {
   expect(parseConfig({ fallback: 'later' })).toEqual({
     config: { ...DEFAULT_CONFIG },
     problems: ['option fallback: must be "builtin" or "skip"; using the default'],
+  })
+})
+
+test('blank options retain every built-in default without problems', () => {
+  expect(parseConfig({
+    protectTokens: '',
+    minSavings: ' ',
+    minResultTokens: '\t',
+    protectedTools: ' \n ',
+    artifactDir: '',
+    fallback: ' ',
+    autoShake: '',
+    triggerPercent: ' ',
+    triggerTokens: '',
+    adviseTokens: '\n',
+    aggressiveProtectTokens: ' ',
+    usageLog: '\t',
+  })).toEqual({ config: { ...DEFAULT_CONFIG }, problems: [] })
+})
+
+test('mergeOptions gives passed values priority and counts each source', () => {
+  const merged = mergeOptions(
+    { triggerTokens: '170000', adviseTokens: '', protectedTools: 'none' },
+    { triggerTokens: '150000', adviseTokens: '250000', protectedTools: ['Read'], minSavings: 99, artifactDir: '', fallback: ' ' },
+  )
+  expect(merged).toEqual({
+    options: {
+      triggerTokens: '170000',
+      adviseTokens: '250000',
+      protectedTools: 'none',
+      minSavings: 99,
+    },
+    passed: 2,
+    fromFile: 2,
+  })
+  expect(parseConfig(merged.options).config).toMatchObject({
+    triggerTokens: 170000,
+    adviseTokens: 250000,
+    protectedTools: [],
+    minSavings: 99,
+  })
+})
+
+test('an invalid passed value is not rescued by the file', () => {
+  const merged = mergeOptions({ triggerTokens: 'later' }, { triggerTokens: '150000' })
+  expect(parseConfig(merged.options)).toEqual({
+    config: { ...DEFAULT_CONFIG },
+    problems: ['option triggerTokens: must be a safe integer at least 0; using the default'],
   })
 })

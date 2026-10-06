@@ -1,4 +1,4 @@
-import type { Config } from './config'
+import { CONFIG_OPTION_NAMES, type Config } from './config'
 
 export type Stats = {
   passes: number
@@ -6,12 +6,18 @@ export type Stats = {
   savings: number
   last: string
 }
+export type OptionSources = {
+  passed: number
+  fromFile: number
+  path: string | undefined
+}
 
 export function statusText(
   config: Config,
   root: string | undefined,
   stats: Stats,
   isPending: boolean,
+  sources: OptionSources,
 ): string {
   const normalizedRoot = root?.replace(/\/+$/, '')
   return [
@@ -22,6 +28,8 @@ export function statusText(
     `protected tools: ${config.protectedTools.length === 0 ? 'none' : config.protectedTools.join(', ')}`,
     `artifacts: ${normalizedRoot ?? 'unavailable (no HOME)'}`,
     `usage log: ${config.usageLog ? 'on' : 'off'} (${normalizedRoot === undefined ? 'unavailable (no HOME)' : `${normalizedRoot}/usage`})`,
+    `options: ${sources.passed} passed, ${sources.fromFile} from file, ${Object.keys(CONFIG_OPTION_NAMES).length - sources.passed - sources.fromFile} default`,
+    `config file: ${sources.path ?? 'none'}`,
     `this session: ${stats.passes} passes, ${stats.results} results shaken, ~${stats.savings} estimated tokens saved`,
     `last: ${stats.last}`,
     `pending: ${isPending ? 'aggressive shake' : 'none'}`,

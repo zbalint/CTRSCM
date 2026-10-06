@@ -1,5 +1,6 @@
 import type { On, PluginOptions } from 'claude-code'
-import { parseConfig } from './config'
+import { mergeOptions, parseConfig } from './config'
+import { readConfigFile } from './configFile'
 import { writeArtifact } from './artifacts'
 import { RECOVER_DESCRIPTION, RECOVER_NAME, RECOVER_SCHEMA, recoverResult } from './recover'
 import {
@@ -8,7 +9,7 @@ import {
   rebuild,
   selectResults,
 } from './shake'
-import { statusText, type Stats } from './status'
+import { statusText, type OptionSources, type Stats } from './status'
 import { decideAdvice, decideRequest, markOf, requestOf, type Request } from './trigger'
 import { reportText } from './report'
 import { usageEventPath, type TurnUsageEvent, type UsageEvent } from './usage'
@@ -70,6 +71,10 @@ async function quietRoot(
 export function register(on: On, options: PluginOptions): void {
   const parsed = parseConfig(options)
   const config = parsed.config
+  let problems = parsed.problems
+  const initialSources = mergeOptions(options, {})
+  let optionSources: OptionSources = { passed: initialSources.passed, fromFile: 0, path: undefined }
+  let configFileRead = false
   let isRecoverReady = false
   let problemsLogged = false
   let cooldown = 0
@@ -82,8 +87,36 @@ export function register(on: On, options: PluginOptions): void {
   const stats: Stats = { passes: 0, results: 0, savings: 0, last: 'none yet' }
 
   on('session.start', async ($, e, next) => {
+    if (!configFileRead) {
+      configFileRead = true
+      let home: string | undefined
+      try {
+        home = await $.env.get('HOME')
+      } catch {
+        home = undefined
+      }
+      const loaded = await readConfigFile(
+        {
+          stat: (path) => $.fs.stat(path),
+          read: (path) => $.fs.read(path),
+        },
+        home,
+      )
+      for (const log of loaded.logs) $.ui.log(log)
+      if (loaded.file !== undefined) {
+        const merged = mergeOptions(options, loaded.file)
+        const fileParsed = parseConfig(merged.options)
+        Object.assign(config, fileParsed.config)
+        problems = fileParsed.problems
+        optionSources = {
+          passed: merged.passed,
+          fromFile: merged.fromFile,
+          path: home === undefined ? undefined : `${home}/.ctrscm/config.json`,
+        }
+      }
+    }
     if (!problemsLogged) {
-      for (const problem of parsed.problems) $.ui.log(`CTRSCM: ${problem}`)
+      for (const problem of problems) $.ui.log(`CTRSCM: ${problem}`)
       problemsLogged = true
     }
     try {
@@ -161,7 +194,7 @@ export function register(on: On, options: PluginOptions): void {
     } catch {
       root = undefined
     }
-    return { text: statusText(config, root, stats, isPending) }
+    return { text: statusText(config, root, stats, isPending, optionSources) }
   })
 
   on('session.measure', async ($, e, next) => {

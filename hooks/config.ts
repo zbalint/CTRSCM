@@ -32,6 +32,57 @@ export const DEFAULT_CONFIG: Config = {
   usageLog: true,
 }
 
+export const CONFIG_OPTION_NAMES = {
+  protectTokens: true,
+  minSavings: true,
+  minResultTokens: true,
+  protectedTools: true,
+  artifactDir: true,
+  fallback: true,
+  autoShake: true,
+  triggerPercent: true,
+  triggerTokens: true,
+  adviseTokens: true,
+  usageLog: true,
+  cooldownTurns: true,
+  aggressiveProtectTokens: true,
+} as const
+
+function isBlankOption(value: unknown): boolean {
+  return typeof value === 'string' && value.trim() === ''
+}
+
+function isFileOptionValue(value: unknown): value is string | number | boolean | readonly string[] {
+  if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') return true
+  return Array.isArray(value) && value.every((entry) => typeof entry === 'string')
+}
+
+export function mergeOptions(
+  passedOptions: PluginOptions,
+  file: Record<string, unknown>,
+): { options: PluginOptions; passed: number; fromFile: number } {
+  const options: Record<string, string | number | boolean | readonly string[]> = {}
+  let passed = 0
+  let fromFile = 0
+  for (const name of Object.keys(CONFIG_OPTION_NAMES)) {
+    const passedValue = passedOptions[name]
+    if (passedValue !== undefined && !isBlankOption(passedValue)) {
+      options[name] = passedValue
+      passed += 1
+      continue
+    }
+    if (
+      Object.prototype.hasOwnProperty.call(file, name) &&
+      !isBlankOption(file[name]) &&
+      isFileOptionValue(file[name])
+    ) {
+      options[name] = file[name]
+      fromFile += 1
+    }
+  }
+  return { options, passed, fromFile }
+}
+
 export function parseConfig(options: PluginOptions): { config: Config; problems: string[] } {
   const config: Config = { ...DEFAULT_CONFIG }
   const problems: string[] = []
@@ -51,7 +102,7 @@ export function parseConfig(options: PluginOptions): { config: Config; problems:
     reason: string,
   ): number => {
     const raw = options[name]
-    if (raw === undefined) return DEFAULT_CONFIG[name]
+    if (raw === undefined || isBlankOption(raw)) return DEFAULT_CONFIG[name]
     const value =
       typeof raw === 'number'
         ? raw
@@ -82,7 +133,9 @@ export function parseConfig(options: PluginOptions): { config: Config; problems:
   )
 
   const autoShake = options.autoShake
-  if (typeof autoShake === 'boolean') {
+  if (isBlankOption(autoShake)) {
+    config.autoShake = DEFAULT_CONFIG.autoShake
+  } else if (typeof autoShake === 'boolean') {
     config.autoShake = autoShake
   } else if (typeof autoShake === 'string' && (autoShake.trim().toLowerCase() === 'on' || autoShake.trim().toLowerCase() === 'off')) {
     config.autoShake = autoShake.trim().toLowerCase() === 'on'
@@ -91,7 +144,9 @@ export function parseConfig(options: PluginOptions): { config: Config; problems:
   }
 
   const usageLog = options.usageLog
-  if (typeof usageLog === 'boolean') {
+  if (isBlankOption(usageLog)) {
+    config.usageLog = DEFAULT_CONFIG.usageLog
+  } else if (typeof usageLog === 'boolean') {
     config.usageLog = usageLog
   } else if (typeof usageLog === 'string' && (usageLog.trim().toLowerCase() === 'on' || usageLog.trim().toLowerCase() === 'off')) {
     config.usageLog = usageLog.trim().toLowerCase() === 'on'
@@ -100,11 +155,17 @@ export function parseConfig(options: PluginOptions): { config: Config; problems:
   }
 
   const protectedTools = options.protectedTools
-  if (typeof protectedTools === 'string') {
-    config.protectedTools = protectedTools
-      .split(',')
-      .map((entry) => entry.trim())
-      .filter((entry) => entry !== '')
+  if (isBlankOption(protectedTools)) {
+    config.protectedTools = DEFAULT_CONFIG.protectedTools
+  } else if (typeof protectedTools === 'string') {
+    const normalized = protectedTools.trim()
+    config.protectedTools =
+      normalized.toLowerCase() === 'none'
+        ? []
+        : normalized
+            .split(',')
+            .map((entry) => entry.trim())
+            .filter((entry) => entry !== '')
   } else if (Array.isArray(protectedTools)) {
     config.protectedTools = protectedTools.slice()
   }
@@ -116,7 +177,9 @@ export function parseConfig(options: PluginOptions): { config: Config; problems:
       : undefined
 
   const fallback = options.fallback
-  if (fallback === 'builtin' || fallback === 'skip') {
+  if (isBlankOption(fallback)) {
+    config.fallback = DEFAULT_CONFIG.fallback
+  } else if (fallback === 'builtin' || fallback === 'skip') {
     config.fallback = fallback
   } else if (fallback !== undefined) {
     problems.push('option fallback: must be "builtin" or "skip"; using the default')

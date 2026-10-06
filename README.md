@@ -78,6 +78,26 @@ All options are strings in the plugin configuration. Defaults:
 | `cooldownTurns` | `3` | Changed-context measurements between proactive requests. |
 | `aggressiveProtectTokens` | `4000` | Estimated recent context protected by `/shake`. |
 
+## Config file
+
+CTRSCM reads `$HOME/.ctrscm/config.json` once at the first `session.start`. The file is a
+flat JSON object whose option values are strings, numbers, or booleans; `protectedTools`
+may also be an array of strings. A number is converted to its string form before normal
+option parsing. Unknown keys and invalid value types are ignored and reported by name,
+never with their values.
+
+Configuration follows per-key precedence:
+
+1. A passed option wins.
+2. Otherwise, a value from the config file wins.
+3. Otherwise, the built-in default in the table above applies.
+
+With no file and no passed options, CTRSCM uses the built-in defaults. With a file and no
+passed options, the file supplies its values. With both, each passed key wins while file
+values for other keys remain active. A blank string is unset and allows the next source to
+win. Use `protectedTools: "none"` or `protectedTools: []` to protect no tool; a blank
+`protectedTools` value is unset and therefore keeps the default `Skill`.
+
 Usage log files hold counts and ids only (no tool text), with one file per event under `{artifact root}/usage/`. On a 200k window, default `triggerPercent` 50 (100k tokens) fires before `triggerTokens` 120000, which only matters on larger windows; `adviseTokens` 150000 and `triggerTokens` 120000 follow the owner's observation that answer quality degrades from roughly 150k tokens.
 
 `/ctrscm report` summarizes the current session's turn counts and estimated per-pass prompt and cache changes.

@@ -140,6 +140,41 @@ test('session start registers recovery, auto compaction writes artifacts, and re
   })
 })
 
+test('session start applies the config file before registrations and only once', async ($, on) => {
+  const configPath = '/home/example/.ctrscm/config.json'
+  const logs: string[] = []
+  let statCalls = 0
+  let readCalls = 0
+  mock.env(on, { HOME: '/home/example' })
+  on('fs.stat', ($, e) => {
+    statCalls += 1
+    expect(e.path).toBe(configPath)
+    return { value: { kind: 'file', size: 32, mtimeMs: 0, isLink: false } }
+  })
+  on('fs.read', ($, e) => {
+    readCalls += 1
+    expect(e.path).toBe(configPath)
+    return { value: JSON.stringify({ triggerTokens: 150000 }) }
+  })
+  on('ui.log', ($, e) => {
+    logs.push(e.text)
+    return { value: undefined }
+  })
+  on('tool.register', ($, e) => ({ value: { tool: `mcp__ctrscm__${e.name}` } }))
+  on('command.register', ($, e) => ({ value: { command: e.name } }))
+  on('session.start', ($, e) => ({ cwd: e.cwd }))
+
+  await $.session.start({ cwd: '/work', surface: null, isInteractive: false })
+  await $.session.start({ cwd: '/work', surface: null, isInteractive: false })
+  const status = await $.command.run(commandRunInput('ctrscm'))
+  expect(status.text).toContain('auto: on (trigger 50% or 150000 tokens')
+  expect(status.text).toContain('options: 0 passed, 1 from file, 12 default')
+  expect(status.text).toContain(`config file: ${configPath}`)
+  expect(statCalls).toBe(1)
+  expect(readCalls).toBe(1)
+  expect(logs).toEqual([])
+})
+
 test('a usage event write failure does not change a successful compaction', async ($, on) => {
   const writes: string[] = []
   const logs: string[] = []
@@ -277,6 +312,7 @@ test('failed recovery registration and artifact root use the builtin fallback', 
   expect(await $.session.compact({ trigger: 'auto', messages } as never)).toEqual({ messages })
   expect(beneath).toBe(1)
   expect(logs).toEqual([
+    'CTRSCM: config file skipped: HOME unavailable',
     'CTRSCM: recovery registration failed: no implementation for tool.register',
     'CTRSCM: artifact root lookup failed: no implementation for env.get',
   ])
@@ -315,10 +351,10 @@ test('successful registration without HOME falls back without rewriting', async 
   ).toEqual({ skip: 'ctrscm: artifact root unavailable' })
   expect(beneath).toBe(1)
   expect(writes).toEqual([])
-  expect(logs).toEqual([])
+  expect(logs).toEqual(['CTRSCM: config file skipped: HOME unavailable'])
 })
 
-test('rejected HOME lookup leaves no usage event or log', async ($, on) => {
+test('rejected HOME lookup logs the config skip and leaves no usage event', async ($, on) => {
   const writes: string[] = []
   const logs: string[] = []
   on('env.get', () => {
@@ -339,7 +375,10 @@ test('rejected HOME lookup leaves no usage event or log', async ($, on) => {
   await $.session.start({ cwd: '/work', surface: null, isInteractive: false })
   expect(await $.session.compact({ trigger: 'auto', messages } as never)).toEqual({ messages })
   expect(writes).toEqual([])
-  expect(logs).toEqual(['CTRSCM: artifact root lookup failed: no implementation for env.get'])
+  expect(logs).toEqual([
+    'CTRSCM: config file skipped: HOME unavailable',
+    'CTRSCM: artifact root lookup failed: no implementation for env.get',
+  ])
 })
 
 test('rejected HOME during advice logs lookup failure without an event', async ($, on) => {
@@ -459,6 +498,8 @@ test('session measure registers commands, triggers proactive Shake, and reports 
   expect(logs).toEqual(['CTRSCM: requesting proactive shake (context 75%)'])
   const status = await $.command.run(commandRunInput('ctrscm'))
   expect(status.text).toContain('last: proactive skipped: no transcript')
+  expect(status.text).toContain('options: 0 passed, 0 from file, 13 default')
+  expect(status.text).toContain('config file: none')
 })
 
 test('advice sequence follows request and advice cooldowns with literal events', async ($, on) => {

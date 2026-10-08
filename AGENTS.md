@@ -29,8 +29,9 @@ claude plugin test .
 
 ## TypeScript conventions
 
-- No `any`, no `as` casts except `as const` and the documented test seam (`as never` on
-  the dispatch of `$.session.compact` and `$.tool.call`, tests only; see the spec). No `eval`, no dynamic `import`.
+- No `any`, no `as` casts except `as const` and the documented test seams (`as never` on
+  the dispatch of `$.session.compact` and `$.tool.call`; and the one `as unknown as` in `tests/fixtures/promptEdit.ts`, which
+  dispatches `prompt.edit`, a hook-only event the public `Engine` type omits; tests only, see the specs). No `eval`, no dynamic `import`.
 - Never swallow an error silently: report it with `$.ui.log` or return it as a tool
   error. A failed artifact write must reach the fallback, never a partial transcript.
 - All file access goes through `$.fs`; all environment access through `$.env`. Do not

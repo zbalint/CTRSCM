@@ -2,9 +2,9 @@
 
 ## 0. Status
 
-**LOCKED** (2026-10-08), revision 4 (Amendments 1 to 3, section 7: the `prompt.submit` mechanism of revision 1 is refused by the host; replaced by an idle timer). Consultant `m_808` applied to revision 1. Owner decisions: the idle Shake drops only `minSavings` (`minResultTokens` and `protectTokens` stay); the owner delegated the remaining design choices to the architect.
+**LOCKED** (2026-10-08), revision 5 (Amendments 1 to 4, section 7: the `prompt.submit` mechanism of revision 1 is refused by the host; replaced by an idle timer). Consultant `m_808` applied to revision 1. Owner decisions: the idle Shake drops only `minSavings` (`minResultTokens` and `protectTokens` stay); the owner delegated the remaining design choices to the architect.
 
-**Scope.** Edits: `hooks/config.ts`, `hooks/trigger.ts`, `hooks/register.ts`, `hooks/status.ts`, `.claude-plugin/plugin.json`, `README.md` (the options table only), `tests/config.test.ts`, `tests/trigger.test.ts`, `tests/register.test.ts`, `tests/status.test.ts`. Does not touch: `hooks/shake.ts`, `hooks/report.ts`, `hooks/usage.ts`, `hooks/usageLog.ts`, `hooks/configFile.ts`, `hooks/artifacts.ts`, `hooks/recover.ts`, other `tests/*`, `docs/*`, `AGENTS.md`, `types/` (the architect edits `docs/usage.md`, `docs/backlog.md`, `docs/verification.md` after acceptance). No new dependency, no new file. No commit, stage, merge or push: leave the diff uncommitted.
+**Scope.** Edits: `hooks/config.ts`, `hooks/trigger.ts`, `hooks/register.ts`, `hooks/status.ts`, `.claude-plugin/plugin.json`, `README.md` (the options table only), `tests/config.test.ts`, `tests/trigger.test.ts`, `tests/register.test.ts`, `tests/status.test.ts`, and one new file `tests/fixtures/promptEdit.ts` (section 3 item 5). Does not touch: `hooks/shake.ts`, `hooks/report.ts`, `hooks/usage.ts`, `hooks/usageLog.ts`, `hooks/configFile.ts`, `hooks/artifacts.ts`, `hooks/recover.ts`, other `tests/*`, `docs/*`, `types/` (the architect edits `AGENTS.md`,  `docs/usage.md`, `docs/backlog.md`, `docs/verification.md` after acceptance). No new dependency; no new file except the fixture above. No commit, stage, merge or push: leave the diff uncommitted.
 
 **Location and branch:** main checkout `/home/zbalint/workspace/CTRSCM`, branch `develop`, at the commit that holds this spec. **Shared task `context_id`:** `ctrscm-idle-shake`.
 **Public test seams:** `markOf` / `requestOf` (pure), `parseConfig` (pure), `statusText` (pure), and the registered hooks driven through `$` (`turn.complete`, `turn.start`, the mock clock, `session.compact`, `ui.log`, `fs.write`).
@@ -49,14 +49,26 @@ Write the failing test first, one behavior at a time. Literals only (AGENTS.md).
 1. `tests/trigger.test.ts`: `markOf('idle')` is `'ctrscm:idle'`, `requestOf('ctrscm:idle')` is `'idle'`, and the two existing marks still map as before.
 2. `tests/config.test.ts`: `idleShakeMinutes` default 0; `'65'` gives 65; `'0'` gives 0; `'abc'` and `-1` give the default with the problem text in D1; a blank value is unset. Add `idleShakeMinutes: 0` wherever a full `Config` literal is asserted (lines 16, 46, 92 are `adviseTokens` neighbors). The file-merge test at lines 183 to 206 lists option names: extend only if it asserts the full name list.
 3. `tests/status.test.ts` and `tests/register.test.ts`: the new status line, and `14 default` where `13 default` is asserted (`tests/status.test.ts:26`, `:54`; `tests/register.test.ts:520`).
-4. `tests/register.test.ts`, the hooks driven through `$` (`$.session.start`, `$.session.measure`, `$.turn.start`, `$.turn.complete`, `$.prompt.edit`) with the mock clock advanced by the test (`mock.clock(...).advance(...)`). The compact stack in the idle cases is: a prepend `Plugin` whose `session.compact` hook injects the transcript with `next({ trigger: e.trigger, instructions: e.instructions, messages })`, the mod's own hook, and a bottom test-level `on('session.compact', ($, e) => ({ messages: e.messages }))`; the test-level `on('prompt.edit', ($, e) => ({ text: e.text + e.inputText, cursor: e.cursor + e.inputText.length }))` is the core editor. Seed `lastContext` with a `session.measure` of 40000 tokens, complete one main-thread `answer` turn, then:
-   - `idleShakeMinutes` 60, advance 60 minutes, one `$.prompt.edit` from `origin.kind` `composer`, tool results present: one compact call whose `instructions` is `'ctrscm:idle'`, artifacts written although `minSavings` is larger than the available savings, the usage file has `label: 'idle'`, `outcome: 'shook'`, the status line reads `this session: 1 passes`, and the edit result still reaches the caller (the typed text is in the returned box).
+4. `tests/register.test.ts`, the hooks driven through `$` (`$.session.start`, `$.session.measure`, `$.turn.start`, `$.turn.complete`, `promptEdit($, ...)` from the fixture of item 5) with the mock clock advanced by the test (`mock.clock(...).advance(...)`). The compact stack in the idle cases is: a prepend `Plugin` whose `session.compact` hook injects the transcript with `next({ trigger: e.trigger, instructions: e.instructions, messages })`, the mod's own hook, and a bottom test-level `on('session.compact', ($, e) => ({ messages: e.messages }))`; the test-level `on('prompt.edit', ($, e) => ({ text: e.text + e.inputText, cursor: e.cursor + e.inputText.length }))` is the core editor. Seed `lastContext` with a `session.measure` of 40000 tokens, complete one main-thread `answer` turn, then:
+   - `idleShakeMinutes` 60, advance 60 minutes, one `promptEdit($, { origin: { kind: 'composer' }, text: '', cursor: 0, start: 0, end: 0, inputText: 'a' })`, tool results present: one compact call whose `instructions` is `'ctrscm:idle'`, artifacts written although `minSavings` is larger than the available savings, the usage file has `label: 'idle'`, `outcome: 'shook'`, the status line reads `this session: 1 passes`, and the edit result still reaches the caller (the typed text is in the returned box).
    - advance 59 minutes: no compact. A second edit right after a first idle pass triggers no second attempt (`lastTurnAt` was cleared); the next `answer` turn starts the next gap.
    - `idleShakeMinutes` 0 (default): no compact.
    - `$.session.compact` rejects (bottom handler throws, or none registered): the log `CTRSCM: idle shake rejected: ...`, a `failed` usage event labeled `idle` with reason `compaction failed`, `stats.last` reading `idle skipped: compaction failed`, the cooldown set, and the edit still returned.
    - gates, each its own case with an otherwise-idle setup: `autoShake` off, `isPending` (queued `/shake`), context 29999 tokens, no completed turn yet, a turn running (`$.turn.start` without `$.turn.complete`), and a subagent turn complete (`agentId` set) or a non-`answer` reason that must not set the clock.
    - cooldown: after the idle pass a proactive trigger inside `cooldownTurns` measurements is not requested.
    Existing behavior: every existing test passes unchanged except the literals listed above.
+5. `tests/fixtures/promptEdit.ts`, one export, exactly this shape (the mock engine raises `prompt.edit` at runtime, but the public `Engine` type lists only the events a plugin can call, so `$.prompt.edit` does not typecheck; this fixture holds the only cast, which `AGENTS.md` now documents as a test seam):
+```ts
+import type { PromptEditInput, PromptEditResult } from 'claude-code'
+import type { Engine } from 'claude-code/testing'
+
+type PromptEditDispatch = { edit: (e: PromptEditInput) => Promise<PromptEditResult> }
+
+// the mock engine raises prompt.edit though the public Engine type omits it
+export function promptEdit($: Engine, e: PromptEditInput): Promise<PromptEditResult> {
+  return ($.prompt as unknown as PromptEditDispatch).edit(e)
+}
+```
 
 ## 4. Out of scope
 
@@ -74,11 +86,12 @@ claude plugin validate . --strict
 claude plugin test .
 rg -n "idleShakeMinutes" hooks .claude-plugin README.md
 rg -n "ctrscm:idle|IDLE_MIN_CONTEXT_TOKENS|shortcut:" hooks/register.ts hooks/trigger.ts
+rg -n "as unknown as" hooks tests
 git diff --check
 git status --short
 ```
 
-All three gates pass with no warnings; the test count is the baseline 106 plus the new tests, 0 fail; `git status --short` shows only files named in section 0.
+`rg -n "as unknown as" hooks tests` hits only `tests/fixtures/promptEdit.ts`. All three gates pass with no warnings; the test count is the baseline 106 plus the new tests, 0 fail; `git status --short` shows only files named in section 0.
 
 ## 7. Amendment 1 (revision 2)
 
@@ -91,3 +104,7 @@ Trigger: developer `BLOCKED` `m_815` (2026-10-08): the loader refused `runIdleSh
 ## Amendment 3 (revision 4)
 
 Trigger: developer question `m_822` (2026-10-08): with a bottom handler the timer-origin compact reaches core but the mod's own `session.compact` hook does not run. Verified by the architect's mock probe (scratch plugin outside the repo): the mod's compact hook runs for compacts called from `session.measure`, `turn.complete` and `prompt.edit` hooks but **not** for one called from a `$.clock.after` callback. In the real host that call would go to core (built-in summarization) at an idle moment, which is unsafe, so the timer is abandoned. Third change of mechanism: causal review (third cycle): all three mechanisms (revisions 1 to 3) were specified before the architect probed the host's dispatch rules; the control for revision 4 is that the exact mechanism (`prompt.edit` calling the marked compact, mod hook running, edit result returned) was run end to end in a scratch plugin before locking, and the host's refusal list was read from the binary. Resolution: D3, D4 and the tests of section 3 item 4 replaced as written; the timer, `Timer` and `turn.complete` arming are removed (the developer deletes that code and its tests); D1, D2, D5 to D9 are unchanged except that D9 still governs (`$` is used as `$.` inside the `prompt.edit` handler, never passed). The developer's finished config, marker, status, manifest and README slices stand. Remove every diagnostic assertion before reporting.
+
+## Amendment 4 (revision 5)
+
+Trigger: developer `BLOCKED` `m_826` (2026-10-08): `$.prompt.edit` does not typecheck (`Property 'edit' does not exist on type 'EngineNoun<"prompt">'`). Verified by the architect: `Engine` maps only `keyof EventCalls`, the events a plugin may call (`types/claude-code.d.ts:11565` to `11567`, `3864` onward); `prompt.edit` is hook-only, but the mock raises it at runtime (the architect's scratch probe called `$.prompt.edit` and it ran the mod's hook). Resolution: a single documented test seam, the fixture of section 3 item 5 (the same kind of exception `AGENTS.md` already allows for `$.session.compact` and `$.tool.call`); the architect adds it to the `AGENTS.md` TypeScript conventions (committed with this amendment) and reports the loosening to the owner. Scope: `tests/fixtures/promptEdit.ts` added; nothing else changes. This is not a fourth host contradiction: the host and mock behave as probed; only the public test type was missing, and it is resolved within task authority.

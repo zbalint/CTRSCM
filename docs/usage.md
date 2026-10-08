@@ -116,6 +116,7 @@ What is known:
   estimated tokens saved) and the last outcome.
 - `/ctrscm report` prints the session's turn counts and the estimated cache effect of each Shake pass (spec 8). Since spec 11 each pass line is followed by a `measured:` line (context drop from the turn events' `contextTokens`, the extra cache write of the first turn after, and a pay-back in turns at assumed list-price ratios, write 2x and read 0.1x), shown once at least one turn before and two after carry a context figure. The first shook pass after the mod loads also logs a one-line hint that the report exists.
 - `/shake` queues an aggressive pass; it runs when the next turn completes.
+- **Idle Shake (spec 12, off by default):** with `idleShakeMinutes` above 0, the first edit of the prompt box (a typed key or a paste) after that many minutes since the last answer, with no turn running, requests one Shake that ignores `minSavings` (`minResultTokens` and `protectTokens` still apply, and a context under 30000 tokens is left alone). The idea: after the prompt cache's lifetime (1 hour on the owner's account; the option is a number you set, for example 65) the next request rewrites the whole prefix anyway, so a smaller prefix is free. It runs while you are still typing; a rejection is logged and dropped, and the keystroke always goes through. Not covered: messages that arrive without any typing (phone, SDK, a2amx channel), and resumed sessions (backlog B28, B29). The live behavior of the marked compaction from the prompt-box hook is unverified in the real host; enable it in `~/.ctrscm/config.json` to try it.
 - `/compact` keeps its normal meaning; with custom instructions it always goes to the built-in summarizer.
 
 ## What it logs
@@ -126,7 +127,7 @@ What is known:
   log line say `CTRSCM: context is N tokens (advice threshold M); consider /compact or a new session`, at most once per `cooldownTurns` measurements.
   It never compacts by itself. `adviseTokens` 0 turns it off.
 - **Usage log (persistent):** one small JSON file per event under `{artifact root}/usage/` (default `~/.ctrscm/artifacts/usage/`), named
-  `{timestamp}-{uuid}.json`. Fields: time, session id, `event` (`shake`, `advice` or `turn`; a `turn` event holds per-turn token counts, spec 8), `label` (`proactive`, `aggressive`, `manual`, `auto`, `plugin`),
+  `{timestamp}-{uuid}.json`. Fields: time, session id, `event` (`shake`, `advice` or `turn`; a `turn` event holds per-turn token counts, spec 8), `label` (`proactive`, `aggressive`, `idle`, `manual`, `auto`, `plugin`),
   `outcome` (`shook`, `skipped`, `fallback`, `failed`), `reason`, number of results, characters externalized, estimated tokens saved, artifact ids, and the
   context tokens and percent from the last measurement before the pass. No tool-result text, no tool input, no paths other than the folder itself.
   `usageLog` `off` switches the shake events off. If the artifact root cannot be resolved nothing is written (a rejected `HOME` lookup is logged).

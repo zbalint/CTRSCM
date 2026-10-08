@@ -14,6 +14,7 @@ test('empty options retain the contract defaults', () => {
       triggerPercent: 50,
       triggerTokens: 120000,
       adviseTokens: 150000,
+      idleShakeMinutes: 0,
       usageLog: true,
       cooldownTurns: 3,
       aggressiveProtectTokens: 4000,
@@ -44,6 +45,7 @@ test('numeric strings and option collections are parsed', () => {
       triggerPercent: 50,
       triggerTokens: 120000,
       adviseTokens: 150000,
+      idleShakeMinutes: 0,
       usageLog: true,
       cooldownTurns: 3,
       aggressiveProtectTokens: 4000,
@@ -90,6 +92,7 @@ test('invalid numeric values keep defaults and report one problem each', () => {
     triggerPercent: 50,
     triggerTokens: 120000,
     adviseTokens: 150000,
+    idleShakeMinutes: 0,
     usageLog: true,
     cooldownTurns: 3,
     aggressiveProtectTokens: 4000,
@@ -132,6 +135,21 @@ test('advice and usage options parse their literal forms and problems', () => {
     problems: ['option usageLog: must be "on" or "off"; using the default'],
   })
 })
+
+test('idle Shake minutes accepts zero, positive integers, and reports invalid values', () => {
+  expect(parseConfig({ idleShakeMinutes: '65' }).config.idleShakeMinutes).toBe(65)
+  expect(parseConfig({ idleShakeMinutes: '0' }).config.idleShakeMinutes).toBe(0)
+  expect(parseConfig({ idleShakeMinutes: 'abc' })).toEqual({
+    config: { ...DEFAULT_CONFIG },
+    problems: ['option idleShakeMinutes: must be a safe integer at least 0; using the default'],
+  })
+  expect(parseConfig({ idleShakeMinutes: -1 })).toEqual({
+    config: { ...DEFAULT_CONFIG },
+    problems: ['option idleShakeMinutes: must be a safe integer at least 0; using the default'],
+  })
+  expect(parseConfig({ idleShakeMinutes: ' ' })).toEqual({ config: { ...DEFAULT_CONFIG }, problems: [] })
+})
+
 
 test('proactive numeric options enforce their contract ranges', () => {
   expect(
@@ -181,6 +199,7 @@ test('blank options retain every built-in default without problems', () => {
     triggerPercent: ' ',
     triggerTokens: '',
     adviseTokens: '\n',
+    idleShakeMinutes: ' ',
     aggressiveProtectTokens: ' ',
     usageLog: '\t',
   })).toEqual({ config: { ...DEFAULT_CONFIG }, problems: [] })

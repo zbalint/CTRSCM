@@ -76,6 +76,7 @@ Options reach the mod as strings in the plugin configuration, or from the config
 | `triggerPercent` | `50` | Context percentage threshold. |
 | `triggerTokens` | `120000` | Context token threshold; `0` disables this threshold. |
 | `adviseTokens` | `150000` | Context token threshold for advice; `0` disables advice. |
+| `idleShakeMinutes` | `0` | Minutes idle before the first prompt back requests an idle Shake (the prompt cache is cold by then); `0` disables it. |
 | `usageLog` | `on` | Write one count-and-id usage event file per tracked event under the artifact root. |
 | `cooldownTurns` | `3` | Changed-context measurements between proactive requests. |
 | `aggressiveProtectTokens` | `4000` | Estimated recent context protected by `/shake`. |

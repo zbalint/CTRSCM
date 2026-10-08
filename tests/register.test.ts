@@ -5,6 +5,7 @@ import { PLACEHOLDER_PREFIX, RECOVER_TOOL } from '../hooks/shake'
 import { AGGRESSIVE_MARK, PROACTIVE_MARK } from '../hooks/trigger'
 import { commandRunInput } from './fixtures/commandRunInput'
 import { usageEventPath } from '../hooks/usage'
+import { promptEdit } from './fixtures/promptEdit'
 const large = 'x'.repeat(80000)
 const messages: SessionMessage[] = [
   { role: 'user', text: 'start', toolUses: [], toolResults: [], handle: 'm0' },
@@ -171,7 +172,7 @@ test('session start applies the config file before registrations and only once',
   await $.session.start({ cwd: '/work', surface: null, isInteractive: false })
   const status = await $.command.run(commandRunInput('ctrscm'))
   expect(status.text).toContain('auto: on (trigger 50% or 150000 tokens')
-  expect(status.text).toContain('options: 0 passed, 1 from file, 12 default')
+  expect(status.text).toContain('options: 0 passed, 1 from file, 13 default')
   expect(status.text).toContain(`config file: ${configPath}`)
   expect(statCalls).toBe(1)
   expect(readCalls).toBe(1)
@@ -517,7 +518,7 @@ test('session measure registers commands, triggers proactive Shake, and reports 
   expect(logs).toEqual(['CTRSCM: requesting proactive shake (context 75%)'])
   const status = await $.command.run(commandRunInput('ctrscm'))
   expect(status.text).toContain('last: proactive skipped: no transcript')
-  expect(status.text).toContain('options: 0 passed, 0 from file, 13 default')
+  expect(status.text).toContain('options: 0 passed, 0 from file, 14 default')
   expect(status.text).toContain('config file: none')
 })
 
@@ -594,6 +595,386 @@ test('ctrscm status reports unavailable engine usage without logging', async ($,
   expect(status.text).toContain('engine compaction: unavailable')
   expect(logs).toEqual([])
 })
+
+
+const idleHost: Plugin = {
+  name: 'idle-host',
+  tier: 'prepend',
+  register(on) {
+    on('session.compact', ($, e, next) => {
+      if (e.instructions !== 'ctrscm:idle') return next(e)
+      $.ui.log('test idle host compact ctrscm:idle')
+      const text = 'x'.repeat(40000)
+      return next({
+        trigger: e.trigger,
+        instructions: e.instructions,
+        messages: [
+          {
+            role: 'assistant',
+            text: '',
+            toolUses: [{ tool_use_id: 'idle-tool', tool: 'Read', input: { file_path: '/work/a.ts' }, text, result: text }],
+          },
+          {
+            role: 'user',
+            text: '',
+            toolUses: [],
+            toolResults: [{ tool_use_id: 'idle-tool', text, isError: false, result: text }],
+          },
+          {
+            role: 'assistant',
+            text: 'done',
+            toolUses: [],
+          },
+        ],
+      })
+    })
+  },
+}
+
+function idleHarness(on: On, overrides: Record<string, string> = {}) {
+  const writes: Array<{ path: string; text: string }> = []
+  const logs: string[] = []
+  const clock = mock.clock(on, { now: Date.parse('2026-10-05T00:00:00.000Z') })
+  mock.env(on, { HOME: '/home/example' })
+  on('session.id', () => ({ value: 's-idle-matrix' }))
+  on('fs.stat', () => ({ value: { kind: 'file', size: 128, mtimeMs: 0, isLink: false } }))
+  on('fs.read', () => ({
+    value: JSON.stringify({
+      idleShakeMinutes: '60',
+      minSavings: '1000000',
+      protectTokens: '0',
+      minResultTokens: '1',
+      protectedTools: 'none',
+      ...overrides,
+    }),
+  }))
+  on('fs.write', ($, e) => {
+    writes.push({ path: e.path, text: e.text })
+    return { value: undefined }
+  })
+  on('tool.register', ($, e) => ({ value: { tool: `mcp__ctrscm__${e.name}` } }))
+  on('command.register', ($, e) => ({ value: { command: e.name } }))
+  on('ui.log', ($, e) => {
+    logs.push(e.text)
+    return { value: undefined }
+  })
+  on('session.usage', () => ({
+    value: {
+      context: { window: 200000, tokens: 40000, percent: 20 },
+      rateLimits: [],
+    },
+  }))
+  on('session.start', ($, e) => ({ cwd: e.cwd }))
+  on('session.measure', ($, e) => ({ changed: e.changed }))
+  on('turn.start', ($, e) => ({ turnId: e.turnId }))
+  on('turn.complete', () => ({ text: 'answer kept' }))
+  on('prompt.edit', ($, e) => ({ text: e.text + e.inputText, cursor: e.cursor + e.inputText.length }))
+  on('session.compact', ($, e) => ({ messages: e.messages }))
+  return { clock, writes, logs }
+}
+
+async function measureIdleContext($: Engine, tokens = 40000) {
+  await $.session.start({ cwd: '/work', surface: null, isInteractive: false })
+  await $.session.measure({
+    context: { window: 200000, tokens, percent: tokens / 2000 },
+    rateLimits: [],
+    changed: ['context'],
+  })
+}
+
+async function seedIdleTurn($: Engine, reason: Exclude<TurnCompleteInput['reason'], 'refusal'> = 'answer', agentId?: string) {
+  await measureIdleContext($)
+  await $.turn.complete({
+    answer: '',
+    durationMs: 1,
+    isAborted: reason === 'aborted',
+    turnId: 't-idle-matrix',
+    reason,
+    agentId,
+  })
+}
+
+function idleEdit($: Engine) {
+  return promptEdit($, {
+    origin: { kind: 'composer' },
+    text: '',
+    cursor: 0,
+    start: 0,
+    end: 0,
+    inputText: 'a',
+  })
+}
+
+function idleEvents(writes: Array<{ path: string; text: string }>) {
+  return writes
+    .filter(({ path }) => path.includes('/usage/'))
+    .map(({ text }) => JSON.parse(text))
+    .filter((event) => event.event === 'shake' && event.label === 'idle')
+}
+
+async function expectNoIdleEdit($: Engine, h: { writes: Array<{ path: string; text: string }> }) {
+  expect(await idleEdit($)).toEqual({ text: 'a', cursor: 1 })
+  expect(idleEvents(h.writes)).toHaveLength(0)
+}
+
+const idleRejectHost: Plugin = {
+  name: 'idle-reject-host',
+  tier: 'prepend',
+  register(on) {
+    on('session.compact', ($, e, next) => {
+      if (e.instructions === 'ctrscm:idle') {
+        return next.to({
+          trigger: e.trigger,
+          instructions: e.instructions,
+          messages: [{ role: 'user', text: 'probe', toolUses: [] }],
+        }, 'core')
+      }
+      return next(e)
+    })
+  },
+}
+
+test('idle prompt edit requests a marked Shake after a cold-cache gap', {
+  plugins: [idleHost],
+}, async ($, on) => {
+  const writes: Array<{ path: string; text: string }> = []
+  const logs: string[] = []
+  mock.env(on, { HOME: '/home/example' })
+  const clock = mock.clock(on, { now: Date.parse('2026-10-05T00:00:00.000Z') })
+  on('session.id', () => ({ value: 's-idle-success' }))
+  on('fs.stat', () => ({
+    value: { kind: 'file', size: 128, mtimeMs: 0, isLink: false },
+  }))
+  on('fs.read', () => ({
+    value: JSON.stringify({
+      idleShakeMinutes: '60',
+      minSavings: '1000000',
+      protectTokens: '0',
+      minResultTokens: '1',
+      protectedTools: 'none',
+    }),
+  }))
+  on('fs.write', ($, e) => {
+    writes.push({ path: e.path, text: e.text })
+    return { value: undefined }
+  })
+  on('tool.register', ($, e) => ({ value: { tool: `mcp__ctrscm__${e.name}` } }))
+  on('command.register', ($, e) => ({ value: { command: e.name } }))
+  on('ui.log', ($, e) => {
+    logs.push(e.text)
+    return { value: undefined }
+  })
+  on('session.usage', () => ({
+    value: {
+      context: { window: 200000, tokens: 40000, percent: 20 },
+      rateLimits: [],
+    },
+  }))
+  on('session.start', ($, e) => ({ cwd: e.cwd }))
+  on('session.measure', ($, e) => ({ changed: e.changed }))
+  on('turn.complete', () => ({ text: 'answer kept' }))
+  on('prompt.edit', ($, e) => ({ text: e.text + e.inputText, cursor: e.cursor + e.inputText.length }))
+  on('session.compact', ($, e) => ({ messages: e.messages }))
+
+  await $.session.start({ cwd: '/work', surface: null, isInteractive: false })
+  await $.session.measure({
+    context: { window: 200000, tokens: 40000, percent: 20 },
+    rateLimits: [],
+    changed: ['context'],
+  })
+  await $.turn.complete({
+    answer: '',
+    durationMs: 1,
+    isAborted: false,
+    turnId: 't-idle-success',
+    reason: 'answer',
+  })
+  await clock.advance(60 * 60_000)
+  const editResult = await promptEdit($, {
+    origin: { kind: 'composer' },
+    text: '',
+    cursor: 0,
+    start: 0,
+    end: 0,
+    inputText: 'a',
+  })
+  expect(editResult).toEqual({ text: 'a', cursor: 1 })
+  const idleUsage = writes
+    .map(({ path, text }) => (path.includes('/usage/') ? JSON.parse(text) : undefined))
+    .find((event) => event?.event === 'shake' && event.label === 'idle')
+  expect(idleUsage).toEqual(expect.objectContaining({ label: 'idle', outcome: 'shook' }))
+  expect(writes.some(({ path }) => path.includes('/chunk-0000.txt'))).toBe(true)
+  expect(writes.some(({ path }) => path.includes('/manifest.json'))).toBe(true)
+  expect(logs).toContain('CTRSCM: idle shake requested (idle 60 min)')
+  expect(logs).toContain('test idle host compact ctrscm:idle')
+  expect((await $.command.run(commandRunInput('ctrscm'))).text).toContain('this session: 1 passes')
+})
+
+test('idle prompt edit waits for the gap and only attempts once per turn', {
+  plugins: [idleHost],
+}, async ($, on) => {
+  const h = idleHarness(on)
+  await seedIdleTurn($)
+  await h.clock.advance(59 * 60_000)
+  expect(await idleEdit($)).toEqual({ text: 'a', cursor: 1 })
+  expect(idleEvents(h.writes)).toHaveLength(0)
+
+  await h.clock.advance(60_000)
+  expect(await idleEdit($)).toEqual({ text: 'a', cursor: 1 })
+  expect(idleEvents(h.writes)).toHaveLength(1)
+  expect(await idleEdit($)).toEqual({ text: 'a', cursor: 1 })
+  expect(idleEvents(h.writes)).toHaveLength(1)
+
+  await $.turn.start({ text: 'next', turnId: 't-idle-next' })
+  await $.turn.complete({
+    answer: '',
+    durationMs: 1,
+    isAborted: false,
+    turnId: 't-idle-next',
+    reason: 'answer',
+  })
+  await h.clock.advance(60 * 60_000)
+  await idleEdit($)
+  expect(idleEvents(h.writes)).toHaveLength(2)
+})
+
+test('idle prompt edit stays disabled at the default', {
+  plugins: [idleHost],
+}, async ($, on) => {
+  const h = idleHarness(on, { idleShakeMinutes: '0' })
+  await seedIdleTurn($)
+  await h.clock.advance(60 * 60_000)
+  expect(await idleEdit($)).toEqual({ text: 'a', cursor: 1 })
+  expect(idleEvents(h.writes)).toHaveLength(0)
+  expect(h.logs).not.toContain('CTRSCM: idle shake requested (idle 60 min)')
+})
+
+test('idle prompt edit records a rejected compaction and preserves the edit', {
+  plugins: [idleRejectHost],
+}, async ($, on) => {
+  const h = idleHarness(on)
+  await seedIdleTurn($)
+  await h.clock.advance(60 * 60_000)
+  expect(await idleEdit($)).toEqual({ text: 'a', cursor: 1 })
+  expect(h.logs.some((text) => text.startsWith('CTRSCM: idle shake rejected:'))).toBe(true)
+  expect(idleEvents(h.writes)).toEqual([
+    expect.objectContaining({ label: 'idle', outcome: 'failed', reason: 'compaction failed' }),
+  ])
+  expect((await $.command.run(commandRunInput('ctrscm'))).text).toContain('last: idle skipped: compaction failed')
+
+  await $.session.measure({
+    context: { window: 200000, tokens: 40000, percent: 20 },
+    rateLimits: [],
+    changed: ['context'],
+  })
+  expect(h.logs).not.toContain('CTRSCM: requesting proactive shake (context 20%)')
+})
+
+test('idle prompt edit respects the autoShake gate', {
+  plugins: [idleHost],
+}, async ($, on) => {
+  const h = idleHarness(on, { autoShake: 'off' })
+  await seedIdleTurn($)
+  await h.clock.advance(60 * 60_000)
+  expect(await idleEdit($)).toEqual({ text: 'a', cursor: 1 })
+  expect(idleEvents(h.writes)).toHaveLength(0)
+})
+
+test('idle prompt edit respects a queued shake', {
+  plugins: [idleHost],
+}, async ($, on) => {
+  const h = idleHarness(on)
+  await seedIdleTurn($)
+  await $.command.run(commandRunInput('shake'))
+  await h.clock.advance(60 * 60_000)
+  expect(await idleEdit($)).toEqual({ text: 'a', cursor: 1 })
+  expect(idleEvents(h.writes)).toHaveLength(0)
+})
+
+test('idle prompt edit respects the context floor', {
+  plugins: [idleHost],
+}, async ($, on) => {
+  const h = idleHarness(on)
+  await measureIdleContext($, 29999)
+  await $.turn.complete({
+    answer: '',
+    durationMs: 1,
+    isAborted: false,
+    turnId: 't-small-context',
+    reason: 'answer',
+  })
+  await h.clock.advance(60 * 60_000)
+  await expectNoIdleEdit($, h)
+})
+
+test('idle prompt edit requires a completed turn', {
+  plugins: [idleHost],
+}, async ($, on) => {
+  const h = idleHarness(on)
+  await measureIdleContext($)
+  await h.clock.advance(60 * 60_000)
+  await expectNoIdleEdit($, h)
+})
+
+test('idle prompt edit ignores a running turn', {
+  plugins: [idleHost],
+}, async ($, on) => {
+  const h = idleHarness(on)
+  await measureIdleContext($)
+  await $.turn.start({ text: 'running', turnId: 't-running' })
+  await h.clock.advance(60 * 60_000)
+  await expectNoIdleEdit($, h)
+})
+
+test('idle prompt edit ignores a subagent turn completion', {
+  plugins: [idleHost],
+}, async ($, on) => {
+  const subagent = idleHarness(on)
+  await measureIdleContext($)
+  await $.turn.complete({
+    answer: '',
+    durationMs: 1,
+    isAborted: false,
+    turnId: 't-subagent',
+    reason: 'answer',
+    agentId: 'agent-1',
+  })
+  await subagent.clock.advance(60 * 60_000)
+  await expectNoIdleEdit($, subagent)
+})
+
+test('idle prompt edit does not timestamp an interrupted turn', {
+  plugins: [idleHost],
+}, async ($, on) => {
+  const h = idleHarness(on)
+  await measureIdleContext($)
+  await $.turn.complete({
+    answer: '',
+    durationMs: 1,
+    isAborted: true,
+    turnId: 't-aborted',
+    reason: 'aborted',
+  })
+  await h.clock.advance(60 * 60_000)
+  await expectNoIdleEdit($, h)
+})
+
+test('idle pass cooldown suppresses proactive requests', {
+  plugins: [idleHost],
+}, async ($, on) => {
+  const h = idleHarness(on, { triggerTokens: '50000', triggerPercent: '99' })
+  await seedIdleTurn($)
+  await h.clock.advance(60 * 60_000)
+  await idleEdit($)
+  expect(idleEvents(h.writes)).toHaveLength(1)
+  await $.session.measure({
+    context: { window: 200000, tokens: 60000, percent: 30 },
+    rateLimits: [],
+    changed: ['context'],
+  })
+  expect(h.logs).not.toContain('CTRSCM: requesting proactive shake (context 30%)')
+})
+
 
 test('advice sequence follows request and advice cooldowns with literal events', async ($, on) => {
   const writes: Array<{ path: string; text: string }> = []

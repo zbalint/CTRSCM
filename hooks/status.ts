@@ -61,6 +61,7 @@ export function statusText(
     'CTRSCM status',
     `auto: ${config.autoShake ? 'on' : 'off'} (trigger ${config.triggerPercent}% or ${config.triggerTokens} tokens, 0 = off; cooldown ${config.cooldownTurns} turns)`,
     `advice: at ${config.adviseTokens} tokens, 0 = off`,
+    `idle shake: after ${config.idleShakeMinutes} min idle, 0 = off`,
     contextLine,
     engineLine,
     ...(noteLine === undefined ? [] : [noteLine]),

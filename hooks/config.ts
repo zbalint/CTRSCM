@@ -11,6 +11,7 @@ export type Config = {
   triggerPercent: number
   triggerTokens: number
   adviseTokens: number
+  idleShakeMinutes: number
   cooldownTurns: number
   aggressiveProtectTokens: number
   usageLog: boolean
@@ -27,6 +28,7 @@ export const DEFAULT_CONFIG: Config = {
   triggerPercent: 50,
   triggerTokens: 120000,
   adviseTokens: 150000,
+  idleShakeMinutes: 0,
   cooldownTurns: 3,
   aggressiveProtectTokens: 4000,
   usageLog: true,
@@ -43,6 +45,7 @@ export const CONFIG_OPTION_NAMES = {
   triggerPercent: true,
   triggerTokens: true,
   adviseTokens: true,
+  idleShakeMinutes: true,
   usageLog: true,
   cooldownTurns: true,
   aggressiveProtectTokens: true,
@@ -96,6 +99,7 @@ export function parseConfig(options: PluginOptions): { config: Config; problems:
       | 'triggerTokens'
       | 'cooldownTurns'
       | 'adviseTokens'
+      | 'idleShakeMinutes'
       | 'aggressiveProtectTokens',
     minimum: number,
     maximum: number | undefined,
@@ -124,6 +128,7 @@ export function parseConfig(options: PluginOptions): { config: Config; problems:
   config.triggerPercent = numericOption('triggerPercent', 1, 99, 'must be a safe integer from 1 to 99')
   config.triggerTokens = numericOption('triggerTokens', 0, undefined, 'must be a safe integer at least 0')
   config.adviseTokens = numericOption('adviseTokens', 0, undefined, 'must be a safe integer at least 0')
+  config.idleShakeMinutes = numericOption('idleShakeMinutes', 0, undefined, 'must be a safe integer at least 0')
   config.cooldownTurns = numericOption('cooldownTurns', 0, undefined, 'must be a safe integer at least 0')
   config.aggressiveProtectTokens = numericOption(
     'aggressiveProtectTokens',

@@ -2,16 +2,24 @@ import type { Config } from './config'
 
 export const PROACTIVE_MARK = 'ctrscm:proactive'
 export const AGGRESSIVE_MARK = 'ctrscm:aggressive'
+export const IDLE_MARK = 'ctrscm:idle'
 
-export type Request = 'proactive' | 'aggressive'
+export type Request = 'proactive' | 'aggressive' | 'idle'
+
+const REQUEST_MARKS: Record<Request, string> = {
+  proactive: PROACTIVE_MARK,
+  aggressive: AGGRESSIVE_MARK,
+  idle: IDLE_MARK,
+}
 
 export function markOf(request: Request): string {
-  return request === 'proactive' ? PROACTIVE_MARK : AGGRESSIVE_MARK
+  return REQUEST_MARKS[request]
 }
 
 export function requestOf(instructions: string | undefined): Request | undefined {
   if (instructions === PROACTIVE_MARK) return 'proactive'
   if (instructions === AGGRESSIVE_MARK) return 'aggressive'
+  if (instructions === IDLE_MARK) return 'idle'
   return undefined
 }
 

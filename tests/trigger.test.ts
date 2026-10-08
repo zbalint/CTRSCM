@@ -14,6 +14,11 @@ test('request marks round-trip exactly', () => {
   expect(requestOf(undefined)).toBeUndefined()
 })
 
+test('idle request marks round-trip exactly', () => {
+  expect(markOf('idle')).toBe('ctrscm:idle')
+  expect(requestOf('ctrscm:idle')).toBe('idle')
+})
+
 test('pending requests aggressive and resets cooldown', () => {
   expect(decideRequest({ percent: 1 }, DEFAULT_CONFIG, { cooldown: 2, isPending: true })).toEqual({
     request: 'aggressive',

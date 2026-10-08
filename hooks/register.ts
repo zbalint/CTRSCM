@@ -23,6 +23,9 @@ function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
 }
 
+// shortcut: fixed floor keeps tiny sessions out; make it an option if the owner wants tuning.
+const IDLE_MIN_CONTEXT_TOKENS = 30000
+
 type UsageWriteOperations = {
   now: () => Promise<number>
   sessionId: () => Promise<string>
@@ -67,6 +70,27 @@ async function quietRoot(
     return undefined
   }
 }
+type ContextSnapshot = { tokens: number | null; percent: number | null }
+
+function failedCompactionEvent(
+  label: Request,
+  context: ContextSnapshot,
+): Omit<UsageEvent, 'version' | 'at' | 'sessionId'> {
+  return {
+    agentId: null,
+    event: 'shake',
+    label,
+    outcome: 'failed',
+    reason: 'compaction failed',
+    results: 0,
+    chars: 0,
+    estimatedSavings: 0,
+    artifactIds: [],
+    contextTokens: context.tokens,
+    contextPercent: context.percent,
+    adviseTokens: null,
+  }
+}
 
 export function register(on: On, options: PluginOptions): void {
   const parsed = parseConfig(options)
@@ -84,7 +108,9 @@ export function register(on: On, options: PluginOptions): void {
   let isRequesting = false
   let wanted: Request | undefined
   let adviceCooldown = 0
-  let lastContext: { tokens: number | null; percent: number | null } = { tokens: null, percent: null }
+  let lastContext: ContextSnapshot = { tokens: null, percent: null }
+  let lastTurnAt: number | undefined
+  let isTurnRunning = false
   let lastCostUsd: number | null = null
   const stats: Stats = { passes: 0, results: 0, savings: 0, last: 'none yet' }
 
@@ -287,10 +313,23 @@ export function register(on: On, options: PluginOptions): void {
     }
     return next(e)
   })
+  on('turn.start', ($, e, next) => {
+    isTurnRunning = true
+    return next(e)
+  })
   on('turn.complete', async ($, e, next) => {
+    if (e.agentId === undefined) isTurnRunning = false
     const turnContext = { tokens: lastContext.tokens, percent: lastContext.percent }
     const turnCostUsd = lastCostUsd
     const result = await next(e)
+    if (e.reason === 'answer' && e.agentId === undefined) {
+      try {
+        lastTurnAt = await $.clock.now()
+      } catch (error) {
+        $.ui.log(`CTRSCM: idle clock failed: ${errorMessage(error)}`)
+        lastTurnAt = undefined
+      }
+    }
     if (config.usageLog) {
       const root = await quietRoot(config.artifactDir, () => $.env.get('HOME'), (text) => $.ui.log(text))
       await writeUsageEvent(
@@ -332,20 +371,7 @@ export function register(on: On, options: PluginOptions): void {
       await writeUsageEvent(
         config.usageLog,
         root,
-        {
-          agentId: null,
-          event: 'shake',
-          label: request,
-          outcome: 'failed',
-          reason: 'compaction failed',
-          results: 0,
-          chars: 0,
-          estimatedSavings: 0,
-          artifactIds: [],
-          contextTokens: lastContext.tokens,
-          contextPercent: lastContext.percent,
-          adviseTokens: null,
-        },
+        failedCompactionEvent(request, lastContext),
         {
           now: () => $.clock.now(),
           sessionId: () => $.session.id(),
@@ -358,6 +384,56 @@ export function register(on: On, options: PluginOptions): void {
       cooldown = config.cooldownTurns
     }
     return result
+  })
+  on('prompt.edit', async ($, e, next) => {
+    if (
+      config.idleShakeMinutes <= 0 ||
+      !config.autoShake ||
+      e.origin.kind !== 'composer' ||
+      isTurnRunning ||
+      !isRecoverReady ||
+      isRequesting ||
+      isPending ||
+      wanted !== undefined ||
+      lastTurnAt === undefined ||
+      lastContext.tokens === null ||
+      lastContext.tokens < IDLE_MIN_CONTEXT_TOKENS
+    ) {
+      return next(e)
+    }
+    let now: number
+    try {
+      now = await $.clock.now()
+    } catch (error) {
+      $.ui.log(`CTRSCM: idle clock failed: ${errorMessage(error)}`)
+      return next(e)
+    }
+    if (now - lastTurnAt < config.idleShakeMinutes * 60000) return next(e)
+    isRequesting = true
+    lastTurnAt = undefined
+    $.ui.log(`CTRSCM: idle shake requested (idle ${config.idleShakeMinutes} min)`)
+    try {
+      await $.session.compact({ instructions: markOf('idle') })
+    } catch (error) {
+      $.ui.log(`CTRSCM: idle shake rejected: ${errorMessage(error)}`)
+      stats.last = 'idle skipped: compaction failed'
+      const root = await quietRoot(config.artifactDir, () => $.env.get('HOME'), (text) => $.ui.log(text))
+      await writeUsageEvent(
+        config.usageLog,
+        root,
+        failedCompactionEvent('idle', lastContext),
+        {
+          now: () => $.clock.now(),
+          sessionId: () => $.session.id(),
+          write: (path, text) => $.fs.write(path, text),
+          log: (text) => $.ui.log(text),
+        },
+      )
+    } finally {
+      isRequesting = false
+      cooldown = config.cooldownTurns
+    }
+    return next(e)
   })
   on('tool.call', { tool: RECOVER_TOOL }, async ($, e) => {
     let root: string | undefined
@@ -449,7 +525,11 @@ export function register(on: On, options: PluginOptions): void {
     }
 
     const settings =
-      request === 'aggressive' ? { ...config, protectTokens: config.aggressiveProtectTokens } : config
+      request === 'aggressive'
+        ? { ...config, protectTokens: config.aggressiveProtectTokens }
+        : request === 'idle'
+          ? { ...config, minSavings: 0 }
+          : config
     const selection = selectResults(e.messages, settings)
     if (selection.selected.length === 0) {
       return request === undefined

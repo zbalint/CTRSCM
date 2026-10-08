@@ -131,9 +131,14 @@ What is known:
   `outcome` (`shook`, `skipped`, `fallback`, `failed`), `reason`, number of results, characters externalized, estimated tokens saved, artifact ids, and the
   context tokens and percent from the last measurement before the pass. No tool-result text, no tool input, no paths other than the folder itself.
   `usageLog` `off` switches the shake events off. If the artifact root cannot be resolved nothing is written (a rejected `HOME` lookup is logged).
-- `/ctrscm` totals (and the usage location) show the running session only; the usage files are the record across sessions.
+- `/ctrscm` totals (and the usage location) show the running session only (counted from when the mod was registered, so a resumed or continued session
+  starts at 0 passes even when its transcript already holds placeholders from an earlier process); the usage files are the record across sessions.
 - The artifact directories under `artifactDir` hold what was shaken: one directory per result (`manifest.json` with the tool name, time and
   sizes, plus the chunk files).
+- **Cleaning up (manual, backlog B3):** the mod never deletes artifacts, because `$.fs` has no delete. Removing a directory makes every placeholder that names
+  its id unrecoverable, so delete only artifacts older than any session you may still resume. List the candidates first, then remove them:
+  `find ~/.ctrscm/artifacts -mindepth 1 -maxdepth 1 -type d -not -name usage -mtime +30` and add `-exec rm -rf {} +` once the list looks right
+  (replace `~/.ctrscm/artifacts` with your `artifactDir` if you set one). Leave `usage/`, it is the record across sessions.
 
 `/ctrscm report` (spec 8) sums the current session's events. Context over time and a category breakdown are not built (backlog B16, B19); older sessions can be read
 directly from the files (for example with `jq`).

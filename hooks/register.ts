@@ -110,9 +110,37 @@ export function register(on: On, options: PluginOptions): void {
   let adviceCooldown = 0
   let lastContext: ContextSnapshot = { tokens: null, percent: null }
   let lastTurnAt: number | undefined
+  let resumedContextTokens: number | undefined
   let isTurnRunning = false
   let lastCostUsd: number | null = null
   const stats: Stats = { passes: 0, results: 0, savings: 0, last: 'none yet' }
+
+  on('classic.SessionStart', async ($, e, next) => {
+    const seconds = e.seconds_since_last_response
+    const contextTokens = e.context_tokens
+    if (
+      config.idleShakeMinutes <= 0 ||
+      (e.source !== 'resume' && e.source !== 'fork') ||
+      e.prompt_cache_likely_expired !== true ||
+      typeof seconds !== 'number' ||
+      !Number.isFinite(seconds) ||
+      seconds < 0 ||
+      typeof contextTokens !== 'number' ||
+      !Number.isFinite(contextTokens) ||
+      contextTokens < 0
+    ) {
+      return next(e)
+    }
+    if (lastTurnAt === undefined) {
+      try {
+        lastTurnAt = (await $.clock.now()) - seconds * 1000
+        resumedContextTokens = contextTokens
+      } catch (error) {
+        $.ui.log(`CTRSCM: idle clock failed: ${errorMessage(error)}`)
+      }
+    }
+    return next(e)
+  })
 
   on('session.start', async ($, e, next) => {
     if (!configFileRead) {
@@ -329,6 +357,7 @@ export function register(on: On, options: PluginOptions): void {
         $.ui.log(`CTRSCM: idle clock failed: ${errorMessage(error)}`)
         lastTurnAt = undefined
       }
+      resumedContextTokens = undefined
     }
     if (config.usageLog) {
       const root = await quietRoot(config.artifactDir, () => $.env.get('HOME'), (text) => $.ui.log(text))
@@ -386,6 +415,7 @@ export function register(on: On, options: PluginOptions): void {
     return result
   })
   on('prompt.edit', async ($, e, next) => {
+    const contextTokens = lastContext.tokens ?? resumedContextTokens
     if (
       config.idleShakeMinutes <= 0 ||
       !config.autoShake ||
@@ -396,8 +426,9 @@ export function register(on: On, options: PluginOptions): void {
       isPending ||
       wanted !== undefined ||
       lastTurnAt === undefined ||
-      lastContext.tokens === null ||
-      lastContext.tokens < IDLE_MIN_CONTEXT_TOKENS
+      contextTokens === undefined ||
+      contextTokens === null ||
+      contextTokens < IDLE_MIN_CONTEXT_TOKENS
     ) {
       return next(e)
     }
@@ -411,6 +442,7 @@ export function register(on: On, options: PluginOptions): void {
     if (now - lastTurnAt < config.idleShakeMinutes * 60000) return next(e)
     isRequesting = true
     lastTurnAt = undefined
+    resumedContextTokens = undefined
     $.ui.log(`CTRSCM: idle shake requested (idle ${config.idleShakeMinutes} min)`)
     try {
       await $.session.compact({ instructions: markOf('idle') })

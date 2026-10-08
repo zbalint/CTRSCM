@@ -1,10 +1,11 @@
 import { expect, mock, test, type Engine, type Plugin } from 'claude-code/testing'
-import type { On, SessionMeasureInput, SessionMessage, SessionUsage, TurnCompleteInput } from 'claude-code'
+import type { ClassicEventOf, On, SessionMeasureInput, SessionMessage, SessionUsage, TurnCompleteInput } from 'claude-code'
 import { isArtifactId } from '../hooks/artifacts'
 import { PLACEHOLDER_PREFIX, RECOVER_TOOL } from '../hooks/shake'
 import { AGGRESSIVE_MARK, PROACTIVE_MARK } from '../hooks/trigger'
 import { commandRunInput } from './fixtures/commandRunInput'
 import { usageEventPath } from '../hooks/usage'
+import { classicSessionStart } from './fixtures/classicSessionStart'
 import { promptEdit } from './fixtures/promptEdit'
 const large = 'x'.repeat(80000)
 const messages: SessionMessage[] = [
@@ -670,6 +671,7 @@ function idleHarness(on: On, overrides: Record<string, string> = {}) {
   on('turn.complete', () => ({ text: 'answer kept' }))
   on('prompt.edit', ($, e) => ({ text: e.text + e.inputText, cursor: e.cursor + e.inputText.length }))
   on('session.compact', ($, e) => ({ messages: e.messages }))
+  on('classic.SessionStart', () => ({ additionalContext: ['classic bottom result'] }))
   return { clock, writes, logs }
 }
 
@@ -808,6 +810,254 @@ test('idle prompt edit requests a marked Shake after a cold-cache gap', {
   expect(logs).toContain('CTRSCM: idle shake requested (idle 60 min)')
   expect(logs).toContain('test idle host compact ctrscm:idle')
   expect((await $.command.run(commandRunInput('ctrscm'))).text).toContain('this session: 1 passes')
+})
+
+test('idle prompt edit seeds from a resumed classic session', {
+  plugins: [idleHost],
+}, async ($, on) => {
+  const h = idleHarness(on, { idleShakeMinutes: '65' })
+  await $.session.start({ cwd: '/work', surface: null, isInteractive: false })
+  const result = await classicSessionStart($, {
+    hook_event_name: 'SessionStart',
+    source: 'resume',
+    session_id: 's-idle-resume',
+    transcript_path: '/tmp/idle-resume.jsonl',
+    cwd: '/work',
+    seconds_since_last_response: 4000,
+    context_tokens: 40000,
+    prompt_cache_likely_expired: true,
+  })
+  expect(result).toEqual({ additionalContext: ['classic bottom result'] })
+  expect(await idleEdit($)).toEqual({ text: 'a', cursor: 1 })
+  expect(idleEvents(h.writes)).toEqual([
+    expect.objectContaining({ label: 'idle', outcome: 'shook' }),
+  ])
+  expect(h.logs).toContain('test idle host compact ctrscm:idle')
+})
+
+test('idle prompt edit seeds from a forked classic session', {
+  plugins: [idleHost],
+}, async ($, on) => {
+  const h = idleHarness(on, { idleShakeMinutes: '65' })
+  await $.session.start({ cwd: '/work', surface: null, isInteractive: false })
+  const result = await classicSessionStart($, {
+    hook_event_name: 'SessionStart',
+    source: 'fork',
+    session_id: 's-idle-fork',
+    transcript_path: '/tmp/idle-fork.jsonl',
+    cwd: '/work',
+    seconds_since_last_response: 4000,
+    context_tokens: 40000,
+    prompt_cache_likely_expired: true,
+  })
+  expect(result).toEqual({ additionalContext: ['classic bottom result'] })
+  expect(await idleEdit($)).toEqual({ text: 'a', cursor: 1 })
+  expect(idleEvents(h.writes)).toEqual([
+    expect.objectContaining({ label: 'idle', outcome: 'shook' }),
+  ])
+  expect(h.logs).toContain('test idle host compact ctrscm:idle')
+})
+
+test('idle prompt edit waits for the configured gap from a resumed session', {
+  plugins: [idleHost],
+}, async ($, on) => {
+  const h = idleHarness(on, { idleShakeMinutes: '65' })
+  await $.session.start({ cwd: '/work', surface: null, isInteractive: false })
+  await classicSessionStart($, {
+    hook_event_name: 'SessionStart',
+    source: 'resume',
+    session_id: 's-idle-gap',
+    transcript_path: '/tmp/idle-gap.jsonl',
+    cwd: '/work',
+    seconds_since_last_response: 3000,
+    context_tokens: 40000,
+    prompt_cache_likely_expired: true,
+  })
+  expect(await idleEdit($)).toEqual({ text: 'a', cursor: 1 })
+  expect(idleEvents(h.writes)).toHaveLength(0)
+  await h.clock.advance(16 * 60_000)
+  expect(await idleEdit($)).toEqual({ text: 'a', cursor: 1 })
+  expect(idleEvents(h.writes)).toHaveLength(1)
+})
+
+test('idle resume seeding ignores ineligible classic session starts', {
+  plugins: [idleHost],
+}, async ($, on) => {
+  const h = idleHarness(on, { idleShakeMinutes: '65' })
+  await $.session.start({ cwd: '/work', surface: null, isInteractive: false })
+  const inputs: Array<ClassicEventOf['classic.SessionStart']> = [
+    {
+      hook_event_name: 'SessionStart',
+      source: 'startup',
+      session_id: 's-idle-startup',
+      transcript_path: '/tmp/idle-startup.jsonl',
+      cwd: '/work',
+      seconds_since_last_response: 4000,
+      context_tokens: 40000,
+      prompt_cache_likely_expired: true,
+    },
+    {
+      hook_event_name: 'SessionStart',
+      source: 'resume',
+      session_id: 's-idle-cache-warm',
+      transcript_path: '/tmp/idle-cache-warm.jsonl',
+      cwd: '/work',
+      seconds_since_last_response: 4000,
+      context_tokens: 40000,
+      prompt_cache_likely_expired: false,
+    },
+    {
+      hook_event_name: 'SessionStart',
+      source: 'resume',
+      session_id: 's-idle-cache-unknown',
+      transcript_path: '/tmp/idle-cache-unknown.jsonl',
+      cwd: '/work',
+      seconds_since_last_response: 4000,
+      context_tokens: 40000,
+    },
+    {
+      hook_event_name: 'SessionStart',
+      source: 'resume',
+      session_id: 's-idle-no-gap',
+      transcript_path: '/tmp/idle-no-gap.jsonl',
+      cwd: '/work',
+      context_tokens: 40000,
+      prompt_cache_likely_expired: true,
+    },
+    {
+      hook_event_name: 'SessionStart',
+      source: 'resume',
+      session_id: 's-idle-small-context',
+      transcript_path: '/tmp/idle-small-context.jsonl',
+      cwd: '/work',
+      seconds_since_last_response: 4000,
+      context_tokens: 29999,
+      prompt_cache_likely_expired: true,
+    },
+  ]
+  for (const input of inputs) await classicSessionStart($, input)
+  await h.clock.advance(70 * 60_000)
+  await expectNoIdleEdit($, h)
+})
+
+test('idle resume seeding stays disabled when idle Shake is off', {
+  plugins: [idleHost],
+}, async ($, on) => {
+  const h = idleHarness(on, { idleShakeMinutes: '0' })
+  await $.session.start({ cwd: '/work', surface: null, isInteractive: false })
+  await classicSessionStart($, {
+    hook_event_name: 'SessionStart',
+    source: 'resume',
+    session_id: 's-idle-off',
+    transcript_path: '/tmp/idle-off.jsonl',
+    cwd: '/work',
+    seconds_since_last_response: 4000,
+    context_tokens: 40000,
+    prompt_cache_likely_expired: true,
+  })
+  await h.clock.advance(70 * 60_000)
+  await expectNoIdleEdit($, h)
+})
+
+test('idle resume seeding stays disabled when auto Shake is off', {
+  plugins: [idleHost],
+}, async ($, on) => {
+  const h = idleHarness(on, { autoShake: 'off' })
+  await $.session.start({ cwd: '/work', surface: null, isInteractive: false })
+  await classicSessionStart($, {
+    hook_event_name: 'SessionStart',
+    source: 'resume',
+    session_id: 's-idle-auto-off',
+    transcript_path: '/tmp/idle-auto-off.jsonl',
+    cwd: '/work',
+    seconds_since_last_response: 4000,
+    context_tokens: 40000,
+    prompt_cache_likely_expired: true,
+  })
+  await h.clock.advance(70 * 60_000)
+  await expectNoIdleEdit($, h)
+})
+
+test('idle resume seeding logs and survives a clock failure', {
+  plugins: [idleHost],
+}, async ($, on) => {
+  const logs: string[] = []
+  mock.env(on, { HOME: '/home/example' })
+  on('fs.stat', () => ({ value: { kind: 'file', size: 128, mtimeMs: 0, isLink: false } }))
+  on('fs.read', () => ({ value: JSON.stringify({ idleShakeMinutes: '65' }) }))
+  on('session.start', ($, e) => ({ cwd: e.cwd }))
+  on('tool.register', ($, e) => ({ value: { tool: `mcp__ctrscm__${e.name}` } }))
+  on('command.register', ($, e) => ({ value: { command: e.name } }))
+  on('ui.log', ($, e) => {
+    logs.push(e.text)
+    return { value: undefined }
+  })
+  on('clock.now', () => {
+    throw new Error('resume clock failed')
+  })
+  on('classic.SessionStart', () => ({ additionalContext: ['classic bottom result'] }))
+  await $.session.start({ cwd: '/work', surface: null, isInteractive: false })
+  await expect(
+    classicSessionStart($, {
+      hook_event_name: 'SessionStart',
+      source: 'resume',
+      session_id: 's-idle-clock-failure',
+      transcript_path: '/tmp/idle-clock-failure.jsonl',
+      cwd: '/work',
+      seconds_since_last_response: 4000,
+      context_tokens: 40000,
+      prompt_cache_likely_expired: true,
+    }),
+  ).resolves.toEqual({ additionalContext: ['classic bottom result'] })
+  expect(logs.some((text) => text.startsWith('CTRSCM: idle clock failed: '))).toBe(true)
+})
+
+test('idle resume seed is replaced by a completed answer turn', {
+  plugins: [idleHost],
+}, async ($, on) => {
+  const h = idleHarness(on, { idleShakeMinutes: '65' })
+  await $.session.start({ cwd: '/work', surface: null, isInteractive: false })
+  await classicSessionStart($, {
+    hook_event_name: 'SessionStart',
+    source: 'resume',
+    session_id: 's-idle-answer',
+    transcript_path: '/tmp/idle-answer.jsonl',
+    cwd: '/work',
+    seconds_since_last_response: 4000,
+    context_tokens: 40000,
+    prompt_cache_likely_expired: true,
+  })
+  await $.turn.complete({
+    answer: '',
+    durationMs: 1,
+    isAborted: false,
+    turnId: 't-idle-answer',
+    reason: 'answer',
+  })
+  await expectNoIdleEdit($, h)
+})
+
+test('idle resume context yields to a smaller measured context', {
+  plugins: [idleHost],
+}, async ($, on) => {
+  const h = idleHarness(on, { idleShakeMinutes: '65' })
+  await $.session.start({ cwd: '/work', surface: null, isInteractive: false })
+  await classicSessionStart($, {
+    hook_event_name: 'SessionStart',
+    source: 'resume',
+    session_id: 's-idle-measure',
+    transcript_path: '/tmp/idle-measure.jsonl',
+    cwd: '/work',
+    seconds_since_last_response: 4000,
+    context_tokens: 40000,
+    prompt_cache_likely_expired: true,
+  })
+  await $.session.measure({
+    context: { window: 200000, tokens: 10000, percent: 5 },
+    rateLimits: [],
+    changed: ['context'],
+  })
+  await expectNoIdleEdit($, h)
 })
 
 test('idle prompt edit waits for the gap and only attempts once per turn', {

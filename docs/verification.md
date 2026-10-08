@@ -297,3 +297,16 @@ Closes B25. Not exercised: L3 (a proactive request that skips), a plain `--resum
 ### Round 9 correction (2026-10-06, found while reading pass 3)
 
 The "real median prompt" and "real saved" figures above (and the 1.6x and 3.4x estimate ratios and the break-even turns derived from them) are wrong as read. A turn's `usage` is its responses' token counts summed (`types/claude-code.d.ts` lines 10601 to 10603), so `input + cache creation + cache read` per turn is roughly the context size times the number of model calls in the turn, not a context size. Pass 3 showed it: `prompt per turn 600964 before, 537437 after` while the engine's single-response `context:` read 123k to 133k. Passes 1, 2 and 4 settled at 111k to 125k in the single-response figure. What stays valid: the passes fired, each cost one rebuild of about 88k to 100k cache-creation tokens in the first turn after (88274, 92272, 99624, 99042; ordinary turns 1.5k to 4k), and the proactive trigger at 150k with a ~115k to 123k floor fires again within minutes. Spec 11 measures the saving from `contextTokens` (single-response, lagged) and relabels the summed figure; the first live report from it replaces the numbers above. Owner decision after this: `triggerTokens` 300000 and `adviseTokens` 400000 in `~/.ctrscm/config.json`.
+
+## Round 10: spec 12 (idle Shake), owner's session
+
+Reported by the owner and read from `/ctrscm` and `/ctrscm report` output on 2026-10-09; not a scripted launch. The installed mod was updated, a new session started, `idleShakeMinutes` was 2 in the config file (`options: 0 passed, 12 from file, 2 default`; trigger 99% or 100000 tokens, min savings 100000, protect 20000, min result 500, 1M window). Context was built by reading a spec, a source file, part of the engine declarations and two memories, then the session sat idle for over 2 minutes and the owner typed in the prompt box.
+
+| Observation | Result |
+| --- | --- |
+| Before | `context: not measured yet`, `this session: 0 passes` |
+| After the first keystroke | `last: idle shook 4 results (~17535 estimated tokens)`, `this session: 1 passes, 4 results shaken` |
+| `minSavings` | ~17535 is below the configured 100000 and the pass still ran, as spec 12 says (the idle pass drops only `minSavings`) |
+| Report | `1 shook passes` at 22:11:09; the after figures read n/a because no turn had run since the pass |
+
+Caveats: one session, the idle gap was timed by the owner, not logged by the mod; the cache cost of the rebuild and the saving as measured from `contextTokens` were not read (no turn after the pass yet); `context:` still read "not measured yet" after the pass, expected until the next response (as in round 9) but not re-checked. Not exercised: a resumed session (B28), a message with no keystroke (B29), the idle pass skipping below the 30000-token context floor.

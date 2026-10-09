@@ -40,6 +40,8 @@ Status: the running list of open items. It is a tracker, not a design: a decisio
 | B31 | Audit: when everything eligible is already a placeholder or protected, a proactive request repeats every cooldown (measure request, rejected, `wanted`, turn-end retry, `nothing worth shaking` skip event). Fix: back off after a `nothing worth shaking` skip, or require context growth before the next request | audit |
 | B32 | Audit: for `auto` trigger (window nearly full) any selection at or above `minSavings` replaces the built-in compaction even when it cannot bring the context under the engine threshold; the engine could re-trigger auto compaction repeatedly. Not seen live. Add a guard only if logs show back-to-back auto passes | audit |
 | B33 | Audit nits (no behavior change): `recover` needs only a read-only `Fs` type (`artifacts.ts` `readPage`); the artifact-root lookup is written four times beside `quietRoot` in `register.ts`; `tests/register.test.ts` (60 tests, 2,400 lines) repeats a 10-line `fs.write`/`fs.read`/`ui.log`/`session.id`/`tool.register` harness 20 to 29 times and wants a shared fixture | audit |
+| B34 | Audit N1: a passed invalid option shadows a valid config-file value (the problem line says "using the default" although a file value exists); consultant m_873: acceptable (logged, follows spec 9), at most reword the problem line | audit |
+| B35 | Audit N2/N5/N6 and two silent gaps (consultant m_873): `autoShake`/`usageLog` on/off parsing is duplicated (fold into a helper when a third on/off option arrives); `readPage` is typed with a write-capable `Fs`; `protectedTools` of an unexpected type is ignored without a problem line; a `stat` failure on the config file (EACCES) reads like a missing file | audit |
 
 ## Closed
 

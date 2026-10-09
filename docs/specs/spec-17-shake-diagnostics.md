@@ -62,3 +62,10 @@ git status --short   # only the three scope files, uncommitted
 ```
 
 Expected: tsc exit 0, validate passes, all tests pass (the 147 existing minus none, plus the new ones), `hooks/usageLog.ts`, `hooks/report.ts`, `hooks/shake.ts` unchanged (`git diff --stat` lists only scope files). No known flaky test.
+
+## Amendment 1 (2026-10-09): long-error test waived, one shared limit
+
+Developer question m_950: the `claude plugin test` runtime swallows errors thrown by user hooks on `session.compact`, so only the engine's short `no implementation for session.compact` reaches `failedCompactionEvent`; no public seam injects a 200-plus-character error. Verified against the diff: the cut exists in two places (`failedCompactionEvent` and the measure catch).
+
+- **A1.1.** The two "error longer than 200 characters is cut to exactly 200" test bullets in section 3 are waived: no test for the cut. The architect verifies it by reading the diff. Everything else in section 3 stands.
+- **A1.2.** Replace the two literal `200`s with one exported constant in `hooks/usage.ts` (for example `ERROR_TEXT_LIMIT = 200`) used by both sites. No new helper function, no new test. Section 4 is unchanged.

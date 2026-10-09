@@ -20,11 +20,11 @@ test('statusText renders the complete active status block', () => {
       'context: 50000 tokens (25% of 200000)\n' +
       'engine compaction: auto at 100000 tokens\n' +
       'note: trigger tokens (120000) are at or above the engine threshold (100000); the engine may compact first\n' +
-      'shake: protect 16000, aggressive protect 4000, min savings 4000, min result 1000 (estimated tokens)\n' +
+      'shake: protect 16000, aggressive protect 4000, protect turns 0 (0 = off), min savings 4000, min result 1000 (estimated tokens)\n' +
       'protected tools: Skill\n' +
       'artifacts: /home/example/.ctrscm/artifacts\n' +
       'usage log: on (/home/example/.ctrscm/artifacts/usage)\n' +
-      'options: 0 passed, 0 from file, 14 default\n' +
+      'options: 0 passed, 0 from file, 15 default\n' +
       'config file: none\n' +
       'this session: 2 passes, 3 results shaken, ~12000 estimated tokens saved\n' +
       'last: proactive shook 2 results (~8000 estimated tokens)\n' +
@@ -49,11 +49,11 @@ test('statusText renders unavailable and disabled settings', () => {
       'idle shake: after 0 min idle, 0 = off\n' +
       'context: unavailable (usage unavailable)\n' +
       'engine compaction: unavailable\n' +
-      'shake: protect 16000, aggressive protect 4000, min savings 4000, min result 1000 (estimated tokens)\n' +
+      'shake: protect 16000, aggressive protect 4000, protect turns 0 (0 = off), min savings 4000, min result 1000 (estimated tokens)\n' +
       'protected tools: none\n' +
       'artifacts: unavailable (no HOME)\n' +
       'usage log: on (unavailable (no HOME))\n' +
-      'options: 0 passed, 0 from file, 14 default\n' +
+      'options: 0 passed, 0 from file, 15 default\n' +
       'config file: none\n' +
       'this session: 0 passes, 0 results shaken, ~0 estimated tokens saved\n' +
       'last: none yet\n' +

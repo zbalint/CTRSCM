@@ -79,9 +79,27 @@ export function hasImage(value: unknown): boolean {
   return visit(value, 0)
 }
 
+// shortcut: injected user text without tool results counts as a typed prompt; upgrade when the engine marks injected user messages.
+export function protectedFrom(messages: readonly SessionMessage[], protectTurns: number): number {
+  if (protectTurns <= 0) return messages.length
+  let counted = 0
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index]
+    if (
+      message?.role === 'user' &&
+      message.text.trim() !== '' &&
+      (message.toolResults ?? []).length === 0
+    ) {
+      counted += 1
+      if (counted === protectTurns) return index
+    }
+  }
+  return 0
+}
+
 export function selectResults(
   messages: readonly SessionMessage[],
-  settings: Pick<Config, 'protectTokens' | 'minSavings' | 'minResultTokens' | 'protectedTools'>,
+  settings: Pick<Config, 'protectTokens' | 'protectTurns' | 'minSavings' | 'minResultTokens' | 'protectedTools'>,
 ): { selected: Selected[]; savings: number } {
   const toolCalls = new Map<string, { tool: string; input: Record<string, unknown> }>()
   for (const message of messages) {
@@ -105,11 +123,12 @@ export function selectResults(
     tail[index] = after
     after += costs[index] ?? 0
   }
+  const protectedStart = protectedFrom(messages, settings.protectTurns)
 
   const selected: Selected[] = []
   for (let index = 0; index < messages.length; index += 1) {
     const message = messages[index]
-    if (!message || message.role !== 'user' || (tail[index] ?? 0) < settings.protectTokens) continue
+    if (!message || message.role !== 'user' || index >= protectedStart || (tail[index] ?? 0) < settings.protectTokens) continue
     if ((message.toolResults ?? []).some((result) => hasImage(result.result))) continue
     for (const result of message.toolResults ?? []) {
       const tokens = estimateTokens(result.text)

@@ -2,6 +2,7 @@ import type { PluginOptions } from 'claude-code'
 
 export type Config = {
   protectTokens: number
+  protectTurns: number
   minSavings: number
   minResultTokens: number
   protectedTools: readonly string[]
@@ -19,6 +20,7 @@ export type Config = {
 
 export const DEFAULT_CONFIG: Config = {
   protectTokens: 16000,
+  protectTurns: 0,
   minSavings: 4000,
   minResultTokens: 1000,
   protectedTools: ['Skill'],
@@ -36,6 +38,7 @@ export const DEFAULT_CONFIG: Config = {
 
 export const CONFIG_OPTION_NAMES = {
   protectTokens: true,
+  protectTurns: true,
   minSavings: true,
   minResultTokens: true,
   protectedTools: true,
@@ -93,6 +96,7 @@ export function parseConfig(options: PluginOptions): { config: Config; problems:
   const numericOption = (
     name:
       | 'protectTokens'
+      | 'protectTurns'
       | 'minSavings'
       | 'minResultTokens'
       | 'triggerPercent'
@@ -123,6 +127,7 @@ export function parseConfig(options: PluginOptions): { config: Config; problems:
   }
 
   config.protectTokens = numericOption('protectTokens', 0, undefined, 'must be a safe integer at least 0')
+  config.protectTurns = numericOption('protectTurns', 0, undefined, 'must be a safe integer at least 0')
   config.minSavings = numericOption('minSavings', 0, undefined, 'must be a safe integer at least 0')
   config.minResultTokens = numericOption('minResultTokens', 1, undefined, 'must be a safe integer at least 1')
   config.triggerPercent = numericOption('triggerPercent', 1, 99, 'must be a safe integer from 1 to 99')

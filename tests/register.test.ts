@@ -40,6 +40,33 @@ const messages: SessionMessage[] = [
 
 
 ]
+const protectTurnMessages: SessionMessage[] = [
+  { role: 'user', text: 'first', toolUses: [], toolResults: [] },
+  {
+    role: 'assistant',
+    text: '',
+    toolUses: [{ tool_use_id: 'old-turn', tool: 'Read', input: { file_path: '/work/old.txt' } }],
+  },
+  {
+    role: 'user',
+    text: '',
+    toolUses: [],
+    toolResults: [{ tool_use_id: 'old-turn', text: large, isError: false }],
+  },
+  { role: 'user', text: 'latest', toolUses: [], toolResults: [] },
+  {
+    role: 'assistant',
+    text: '',
+    toolUses: [{ tool_use_id: 'latest-turn', tool: 'Read', input: { file_path: '/work/latest.txt' } }],
+  },
+  {
+    role: 'user',
+    text: '',
+    toolUses: [],
+    toolResults: [{ tool_use_id: 'latest-turn', text: large, isError: false }],
+  },
+  { role: 'assistant', text: large, toolUses: [] },
+]
 
 const twoSelectedMessages: SessionMessage[] = [
   ...messages,
@@ -173,7 +200,7 @@ test('session start applies the config file before registrations and only once',
   await $.session.start({ cwd: '/work', surface: null, isInteractive: false })
   const status = await $.command.run(commandRunInput('ctrscm'))
   expect(status.text).toContain('auto: on (trigger 50% or 150000 tokens')
-  expect(status.text).toContain('options: 0 passed, 1 from file, 13 default')
+  expect(status.text).toContain('options: 0 passed, 1 from file, 14 default')
   expect(status.text).toContain(`config file: ${configPath}`)
   expect(statCalls).toBe(1)
   expect(readCalls).toBe(1)
@@ -519,7 +546,7 @@ test('session measure registers commands, triggers proactive Shake, and reports 
   expect(logs).toEqual(['CTRSCM: requesting proactive shake (context 75%)'])
   const status = await $.command.run(commandRunInput('ctrscm'))
   expect(status.text).toContain('last: proactive skipped: no transcript')
-  expect(status.text).toContain('options: 0 passed, 0 from file, 14 default')
+  expect(status.text).toContain('options: 0 passed, 0 from file, 15 default')
   expect(status.text).toContain('config file: none')
 })
 
@@ -1394,6 +1421,103 @@ test('shake command queues an aggressive pass for the next changed-context measu
   const status = await $.command.run(commandRunInput('ctrscm'))
   expect(status.text).toContain('pending: none')
   expect(status.text).toContain('last: aggressive skipped: no transcript')
+})
+
+const protectTurnHost: Plugin = {
+  name: 'protect-turn-host',
+  tier: 'prepend',
+  register(on) {
+    on('session.compact', ($, e, next) => {
+      if (e.instructions !== 'ctrscm:proactive' && e.instructions !== 'ctrscm:aggressive') return next(e)
+      const text = 'x'.repeat(80000)
+      const fallbackMessages: SessionMessage[] = [
+        { role: 'user', text: 'first', toolUses: [], toolResults: [] },
+        {
+          role: 'assistant',
+          text: '',
+          toolUses: [{ tool_use_id: 'old-turn', tool: 'Read', input: { file_path: '/work/old.txt' } }],
+        },
+        {
+          role: 'user',
+          text: '',
+          toolUses: [],
+          toolResults: [{ tool_use_id: 'old-turn', text, isError: false }],
+        },
+        { role: 'user', text: 'latest', toolUses: [], toolResults: [] },
+        {
+          role: 'assistant',
+          text: '',
+          toolUses: [{ tool_use_id: 'latest-turn', tool: 'Read', input: { file_path: '/work/latest.txt' } }],
+        },
+        {
+          role: 'user',
+          text: '',
+          toolUses: [],
+          toolResults: [{ tool_use_id: 'latest-turn', text, isError: false }],
+        },
+        { role: 'assistant', text, toolUses: [] },
+      ]
+      return next({ ...e, messages: e.messages ?? fallbackMessages })
+    })
+  },
+}
+
+test('ordinary Shake protects the latest typed turn while queued shake overrides it', {
+  plugins: [protectTurnHost],
+}, async ($, on) => {
+  const writes: Array<{ path: string; text: string }> = []
+  const logs: string[] = []
+  mock.env(on, { HOME: '/home/example' })
+  mock.clock(on, { now: Date.parse('2026-10-05T00:00:00.000Z') })
+  on('fs.stat', () => ({ value: { kind: 'file', size: 128, mtimeMs: 0, isLink: false } }))
+  on('fs.read', () => ({
+    value: JSON.stringify({
+      protectTokens: '0',
+      protectTurns: '1',
+      aggressiveProtectTokens: '0',
+      minResultTokens: '1',
+      protectedTools: 'none',
+    }),
+  }))
+  on('fs.write', ($, e) => {
+    writes.push({ path: e.path, text: e.text })
+    return { value: undefined }
+  })
+  on('tool.register', ($, e) => ({ value: { tool: `mcp__ctrscm__${e.name}` } }))
+  on('command.register', ($, e) => ({ value: { command: e.name } }))
+  on('ui.log', ($, e) => {
+    logs.push(e.text)
+    return { value: undefined }
+  })
+  on('session.start', ($, e) => ({ cwd: e.cwd }))
+  on('session.measure', ($, e) => ({ changed: e.changed }))
+  on('turn.complete', ($, e) => ({ text: e.answer }))
+  await $.session.start({ cwd: '/work', surface: null, isInteractive: false })
+
+  const ordinary = await $.session.compact({
+    trigger: 'plugin',
+    instructions: PROACTIVE_MARK,
+    messages: protectTurnMessages,
+  } as never)
+  if (!('messages' in ordinary) || ordinary.messages === undefined) {
+    throw new Error('expected ordinary rewritten transcript')
+  }
+  expect(ordinary.messages[2]).toEqual(expect.objectContaining({
+    toolResults: [expect.objectContaining({ text: expect.stringContaining(PLACEHOLDER_PREFIX) })],
+  }))
+  expect(ordinary.messages[5]).toEqual(protectTurnMessages[5])
+  expect(logs).toContain('CTRSCM: shook 1 tool results (~19960 estimated tokens)')
+
+  expect(await $.command.run(commandRunInput('shake'))).toEqual({
+    text: 'CTRSCM: aggressive shake queued; it runs when the next turn completes',
+  })
+  await $.session.measure({
+    context: { window: 200000, tokens: 1, percent: 1 },
+    rateLimits: [],
+    changed: ['context'],
+  })
+  expect(logs).toContain('CTRSCM: shook 2 tool results (~39920 estimated tokens)')
+  expect(writes.some(({ path, text }) => path.endsWith('/manifest.json') && text.includes('"toolUseId":"latest-turn"'))).toBe(true)
 })
 
 test('marked calls bypass manual fallback and explain an absent transcript', async ($, on) => {

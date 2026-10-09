@@ -8,12 +8,14 @@ import {
   hasImage,
   placeholderOf,
   labelOf,
+  protectedFrom,
   rebuild,
   selectResults,
 } from '../hooks/shake'
 
 const settings = {
   protectTokens: 16000,
+  protectTurns: 0,
   minSavings: 4000,
   minResultTokens: 200,
   protectedTools: ['Skill'],
@@ -68,6 +70,74 @@ const workedExample: SessionMessage[] = [
   { role: 'assistant', text: 'done', toolUses: [], handle: 'm5' },
 ]
 
+test('protectedFrom counts typed prompts from the end and protects all when history is short', () => {
+  const turns: SessionMessage[] = [
+    { role: 'user', text: 'a', toolUses: [] },
+    { role: 'assistant', text: '', toolUses: [{ tool_use_id: 'a-tool', tool: 'Read', input: {} }] },
+    { role: 'user', text: '', toolUses: [], toolResults: [{ tool_use_id: 'a-tool', text: 'result a', isError: false }] },
+    { role: 'assistant', text: 'done a', toolUses: [] },
+    { role: 'user', text: 'b', toolUses: [], toolResults: [] },
+    { role: 'assistant', text: '', toolUses: [{ tool_use_id: 'b-tool', tool: 'Read', input: {} }] },
+    { role: 'user', text: '', toolUses: [], toolResults: [{ tool_use_id: 'b-tool', text: 'result b', isError: false }] },
+    { role: 'assistant', text: 'done b', toolUses: [] },
+  ]
+  expect(protectedFrom(turns, 0)).toBe(8)
+  expect(protectedFrom(turns, 1)).toBe(4)
+  expect(protectedFrom(turns, 2)).toBe(0)
+  expect(protectedFrom(turns, 3)).toBe(0)
+})
+
+test('protectTurns protects recent results while keeping earlier results eligible', () => {
+  const turnMessages: SessionMessage[] = [
+    { role: 'user', text: 'a', toolUses: [], toolResults: [] },
+    { role: 'assistant', text: '', toolUses: [{ tool_use_id: 'old', tool: 'Bash', input: {} }] },
+    { role: 'user', text: '', toolUses: [], toolResults: [{ tool_use_id: 'old', text: large, isError: false }] },
+    { role: 'user', text: 'b', toolUses: [], toolResults: [] },
+    { role: 'assistant', text: '', toolUses: [{ tool_use_id: 'recent', tool: 'Bash', input: {} }] },
+    { role: 'user', text: '', toolUses: [], toolResults: [{ tool_use_id: 'recent', text: large, isError: false }] },
+    { role: 'assistant', text: 'done', toolUses: [] },
+  ]
+  expect(
+    selectResults(turnMessages, { ...settings, protectTokens: 0, protectTurns: 0, minSavings: 0 }),
+  ).toEqual({
+    selected: [
+      { toolUseId: 'old', toolName: 'Bash', label: 'Bash', text: large, tokens: 20000 },
+      { toolUseId: 'recent', toolName: 'Bash', label: 'Bash', text: large, tokens: 20000 },
+    ],
+    savings: 39920,
+  })
+  expect(
+    selectResults(turnMessages, { ...settings, protectTokens: 0, protectTurns: 1, minSavings: 0 }),
+  ).toEqual({
+    selected: [{ toolUseId: 'old', toolName: 'Bash', label: 'Bash', text: large, tokens: 20000 }],
+    savings: 19960,
+  })
+  expect(
+    selectResults(turnMessages, { ...settings, protectTokens: 0, protectTurns: 1, minSavings: 20000 }),
+  ).toEqual({ selected: [], savings: 19960 })
+  expect(
+    selectResults(turnMessages, { ...settings, protectTokens: 30000, protectTurns: 1, minSavings: 0 }),
+  ).toEqual({ selected: [], savings: 0 })
+})
+
+
+test('protectedFrom ignores user results, whitespace-only messages, and assistant messages', () => {
+  const messagesWithNoTypedPrompt: SessionMessage[] = [
+    { role: 'user', text: 'not a prompt', toolUses: [], toolResults: [{ tool_use_id: 'result', text: 'x', isError: false }] },
+    { role: 'user', text: '   ', toolUses: [], toolResults: [] },
+    { role: 'assistant', text: 'assistant text', toolUses: [] },
+  ]
+  expect(protectedFrom(messagesWithNoTypedPrompt, 1)).toBe(0)
+  const mixedMessages: SessionMessage[] = [
+    { role: 'user', text: 'older', toolUses: [], toolResults: [] },
+    { role: 'user', text: 'not a prompt', toolUses: [], toolResults: [{ tool_use_id: 'result', text: 'x', isError: false }] },
+    { role: 'user', text: '   ', toolUses: [], toolResults: [] },
+    { role: 'assistant', text: 'assistant text', toolUses: [] },
+    { role: 'user', text: 'latest', toolUses: [], toolResults: [] },
+  ]
+  expect(protectedFrom(mixedMessages, 1)).toBe(4)
+  expect(protectedFrom(mixedMessages, 2)).toBe(0)
+})
 test('estimateTokens and placeholderOf use the contract literals', () => {
   expect(estimateTokens('12345')).toBe(2)
   expect(PLACEHOLDER_PREFIX).toBe('[CTRSCM shaken tool result:')

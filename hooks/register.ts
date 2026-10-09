@@ -558,7 +558,7 @@ export function register(on: On, options: PluginOptions): void {
 
     const settings =
       request === 'aggressive'
-        ? { ...config, protectTokens: config.aggressiveProtectTokens }
+        ? { ...config, protectTokens: config.aggressiveProtectTokens, protectTurns: 0 }
         : request === 'idle'
           ? { ...config, minSavings: 0 }
           : config

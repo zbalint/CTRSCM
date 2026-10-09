@@ -5,6 +5,7 @@ test('empty options retain the contract defaults', () => {
   expect(parseConfig({})).toEqual({
     config: {
       protectTokens: 16000,
+      protectTurns: 0,
       minSavings: 4000,
       minResultTokens: 1000,
       protectedTools: ['Skill'],
@@ -36,6 +37,7 @@ test('numeric strings and option collections are parsed', () => {
   ).toEqual({
     config: {
       protectTokens: 120,
+      protectTurns: 0,
       minSavings: 99,
       minResultTokens: 7,
       protectedTools: ['Skill', 'Read', 'Bash'],
@@ -66,6 +68,19 @@ test('safe integer numeric boundaries are accepted or rejected', () => {
   })
 })
 
+test('protectTurns parses nonnegative safe integers and reports invalid values', () => {
+  expect(parseConfig({ protectTurns: '2' }).config.protectTurns).toBe(2)
+  expect(parseConfig({ protectTurns: 'abc' })).toEqual({
+    config: { ...DEFAULT_CONFIG },
+    problems: ['option protectTurns: must be a safe integer at least 0; using the default'],
+  })
+  expect(parseConfig({ protectTurns: -1 })).toEqual({
+    config: { ...DEFAULT_CONFIG },
+    problems: ['option protectTurns: must be a safe integer at least 0; using the default'],
+  })
+  expect(parseConfig({ protectTurns: ' ' })).toEqual({ config: { ...DEFAULT_CONFIG }, problems: [] })
+})
+
 test('protected tool arrays are preserved and a blank string leaves Skill protected', () => {
   expect(parseConfig({ protectedTools: ['Read', 'Bash'] }).config.protectedTools).toEqual([
     'Read',
@@ -83,6 +98,7 @@ test('invalid numeric values keep defaults and report one problem each', () => {
   })
   expect(parsed.config).toEqual({
     protectTokens: 16000,
+    protectTurns: 0,
     minSavings: 4000,
     minResultTokens: 1000,
     protectedTools: ['Skill'],
@@ -194,6 +210,7 @@ test('blank options retain every built-in default without problems', () => {
     minResultTokens: '\t',
     protectedTools: ' \n ',
     artifactDir: '',
+    protectTurns: ' ',
     fallback: ' ',
     autoShake: '',
     triggerPercent: ' ',

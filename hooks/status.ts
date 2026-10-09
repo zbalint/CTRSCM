@@ -65,7 +65,7 @@ export function statusText(
     contextLine,
     engineLine,
     ...(noteLine === undefined ? [] : [noteLine]),
-    `shake: protect ${config.protectTokens}, aggressive protect ${config.aggressiveProtectTokens}, min savings ${config.minSavings}, min result ${config.minResultTokens} (estimated tokens)`,
+    `shake: protect ${config.protectTokens}, aggressive protect ${config.aggressiveProtectTokens}, protect turns ${config.protectTurns} (0 = off), min savings ${config.minSavings}, min result ${config.minResultTokens} (estimated tokens)`,
     `protected tools: ${config.protectedTools.length === 0 ? 'none' : config.protectedTools.join(', ')}`,
     `artifacts: ${normalizedRoot ?? 'unavailable (no HOME)'}`,
     `usage log: ${config.usageLog ? 'on' : 'off'} (${normalizedRoot === undefined ? 'unavailable (no HOME)' : `${normalizedRoot}/usage`})`,

@@ -5,6 +5,7 @@
   "author": { "name": "zbalint" },
   "userConfig": {
     "protectTokens": { "type": "string", "title": "Protected recent context", "description": "Estimated tokens of recent context protected from Shake.", "required": false },
+    "protectTurns": { "type": "string", "title": "Protected turns", "description": "Number of most recent typed user turns whose tool results are never externalized, on top of the token tail; zero disables it.", "required": false },
     "minSavings": { "type": "string", "title": "Minimum savings", "description": "Minimum estimated token savings required to apply Shake.", "required": false },
     "minResultTokens": { "type": "string", "title": "Minimum result size", "description": "Minimum estimated tokens in an eligible tool result.", "required": false },
     "protectedTools": { "type": "string", "title": "Protected tools", "description": "Comma-separated tool names whose results are never externalized.", "required": false },

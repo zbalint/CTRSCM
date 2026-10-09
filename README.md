@@ -67,6 +67,7 @@ Options reach the mod as strings in the plugin configuration, or from the config
 | Option | Default | Meaning |
 | --- | --- | --- |
 | `protectTokens` | `16000` | Estimated recent context protected from ordinary Shake. |
+| `protectTurns` | `0` | Most recent typed user turns protected from ordinary Shake, on top of `protectTokens`; `/shake` ignores it. `0` disables it. |
 | `minSavings` | `4000` | Minimum estimated savings required to apply Shake. |
 | `minResultTokens` | `1000` | Minimum estimated result size eligible for externalization. |
 | `protectedTools` | `Skill` | Comma-separated tools whose results stay in the transcript. |

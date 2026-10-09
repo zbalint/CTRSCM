@@ -56,6 +56,22 @@ test('numeric strings and option collections are parsed', () => {
   })
 })
 
+for (const artifactDir of ['ctrscm-artifacts', './x', '~/x']) {
+  test(`relative artifactDir ${artifactDir} uses the default and reports a problem`, () => {
+    expect(parseConfig({ artifactDir })).toEqual({
+      config: { ...DEFAULT_CONFIG },
+      problems: ['option artifactDir: must be an absolute path; using the default'],
+    })
+  })
+}
+
+test('whitespace-only artifactDir uses the default without a problem', () => {
+  expect(parseConfig({ artifactDir: ' \t\n ' })).toEqual({
+    config: { ...DEFAULT_CONFIG },
+    problems: [],
+  })
+})
+
 test('safe integer numeric boundaries are accepted or rejected', () => {
   expect(parseConfig({ protectTokens: Number.MAX_SAFE_INTEGER }).config.protectTokens).toBe(
     Number.MAX_SAFE_INTEGER,

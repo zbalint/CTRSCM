@@ -71,7 +71,7 @@ Options reach the mod as strings in the plugin configuration, or from the config
 | `minSavings` | `4000` | Minimum estimated savings required to apply Shake. |
 | `minResultTokens` | `1000` | Minimum estimated result size eligible for externalization. |
 | `protectedTools` | `Skill` | Comma-separated tools whose results stay in the transcript. |
-| `artifactDir` | empty | Artifact root; empty uses `$HOME/.ctrscm/artifacts`. |
+| `artifactDir` | empty | Artifact root, an absolute path; empty uses `$HOME/.ctrscm/artifacts`. |
 | `fallback` | `builtin` | Use built-in compaction or skip when Shake is not applied. |
 | `autoShake` | `on` | Enable proactive threshold requests. |
 | `triggerPercent` | `50` | Context percentage threshold. |

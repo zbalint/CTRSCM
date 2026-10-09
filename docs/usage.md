@@ -78,7 +78,7 @@ What to tune first:
 - `protectTurns` (spec 14, default 0 = off) additionally protects everything from the Nth-from-last typed prompt onward, however large those turns are, so a turn that read a lot is not shaken
   and recovered minutes later. A typed prompt is a user message with text and no tool results; injected user text (hook reminders, channel messages) counts too. Either rule protects a result.
   `/shake` ignores `protectTurns`.
-- `artifactDir` defaults to `$HOME/.ctrscm/artifacts`. Artifacts are plain copies of the shaken tool output (they can
+- `artifactDir` defaults to `$HOME/.ctrscm/artifacts`; a value must be an absolute path (spec 16: a relative one would resolve against each session's working directory and make placeholders unrecoverable after a resume elsewhere), otherwise it is ignored with a logged problem. Artifacts are plain copies of the shaken tool output (they can
   hold anything a tool printed, including secrets) and nothing deletes them; remove old directories by hand.
 
 ## Example configurations

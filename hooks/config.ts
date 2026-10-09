@@ -181,10 +181,18 @@ export function parseConfig(options: PluginOptions): { config: Config; problems:
   }
 
   const artifactDir = options.artifactDir
-  config.artifactDir =
-    typeof artifactDir === 'string' && artifactDir.trim() !== ''
-      ? artifactDir.trim()
-      : undefined
+  if (typeof artifactDir !== 'string' || artifactDir.trim() === '') {
+    config.artifactDir = undefined
+  } else {
+    const normalized = artifactDir.trim()
+    // shortcut: absolute means a leading '/'; upgrade when a Windows target exists (backlog B6).
+    if (normalized.startsWith('/')) {
+      config.artifactDir = normalized
+    } else {
+      config.artifactDir = undefined
+      problems.push('option artifactDir: must be an absolute path; using the default')
+    }
+  }
 
   const fallback = options.fallback
   if (isBlankOption(fallback)) {

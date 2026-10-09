@@ -12,7 +12,7 @@ import {
 import { statusText, type EngineStatus, type OptionSources, type Stats } from './status'
 import { decideAdvice, decideRequest, markOf, requestOf, type Request } from './trigger'
 import { reportText } from './report'
-import { usageEventPath, type TurnUsageEvent, type UsageEvent } from './usage'
+import { ERROR_TEXT_LIMIT, usageEventPath, type DeferUsageEvent, type TurnUsageEvent, type UsageEvent } from './usage'
 import { readUsageEvents } from './usageLog'
 
 function rootOf(artifactDir: string | undefined, home: string | undefined): string | undefined {
@@ -36,7 +36,10 @@ type UsageWriteOperations = {
 async function writeUsageEvent(
   enabled: boolean,
   root: string | undefined,
-  event: Omit<UsageEvent, 'version' | 'at' | 'sessionId'> | Omit<TurnUsageEvent, 'version' | 'at' | 'sessionId'>,
+  event:
+    | Omit<UsageEvent, 'version' | 'at' | 'sessionId'>
+    | Omit<DeferUsageEvent, 'version' | 'at' | 'sessionId'>
+    | Omit<TurnUsageEvent, 'version' | 'at' | 'sessionId'>,
   operations: UsageWriteOperations,
 ): Promise<void> {
   if (!enabled || root === undefined) return
@@ -74,6 +77,7 @@ type ContextSnapshot = { tokens: number | null; percent: number | null }
 
 function failedCompactionEvent(
   label: Request,
+  error: unknown,
   context: ContextSnapshot,
 ): Omit<UsageEvent, 'version' | 'at' | 'sessionId'> {
   return {
@@ -89,6 +93,7 @@ function failedCompactionEvent(
     contextTokens: context.tokens,
     contextPercent: context.percent,
     adviseTokens: null,
+    error: errorMessage(error).slice(0, ERROR_TEXT_LIMIT),
   }
 }
 
@@ -292,6 +297,8 @@ export function register(on: On, options: PluginOptions): void {
         if (decision.request === 'aggressive') isPending = false
         if (decision.request !== undefined) {
           const request = decision.request
+          let deferError: string | undefined
+          let deferTrackedTurns: string[] | undefined
           isRequesting = true
           if (request === 'proactive') {
             $.ui.log(`CTRSCM: requesting proactive shake (context ${e.context.percent ?? '?'}%)`)
@@ -301,11 +308,35 @@ export function register(on: On, options: PluginOptions): void {
           try {
             await $.session.compact({ instructions: markOf(request) })
           } catch (error) {
+            deferError = errorMessage(error).slice(0, ERROR_TEXT_LIMIT)
+            deferTrackedTurns = [...runningTurns]
             $.ui.log(`CTRSCM: ${request} shake deferred to turn end: ${errorMessage(error)}`)
             wanted = request
             if (request === 'aggressive') isPending = true
           } finally {
             isRequesting = false
+          }
+          if (deferError !== undefined && deferTrackedTurns !== undefined && config.usageLog) {
+            const root = await quietRoot(config.artifactDir, () => $.env.get('HOME'), (text) => $.ui.log(text))
+            await writeUsageEvent(
+              config.usageLog,
+              root,
+              {
+                agentId: null,
+                event: 'defer',
+                kind: request,
+                error: deferError,
+                trackedTurns: deferTrackedTurns,
+                contextTokens: e.context.tokens ?? null,
+                contextPercent: e.context.percent ?? null,
+              },
+              {
+                now: () => $.clock.now(),
+                sessionId: () => $.session.id(),
+                write: (path, text) => $.fs.write(path, text),
+                log: (text) => $.ui.log(text),
+              },
+            )
           }
         } else {
           const advice = decideAdvice(e.context, config, { cooldown: adviceCooldown })
@@ -405,7 +436,7 @@ export function register(on: On, options: PluginOptions): void {
       await writeUsageEvent(
         config.usageLog,
         root,
-        failedCompactionEvent(request, lastContext),
+        failedCompactionEvent(request, error, lastContext),
         {
           now: () => $.clock.now(),
           sessionId: () => $.session.id(),
@@ -462,7 +493,7 @@ export function register(on: On, options: PluginOptions): void {
       await writeUsageEvent(
         config.usageLog,
         root,
-        failedCompactionEvent('idle', lastContext),
+        failedCompactionEvent('idle', error, lastContext),
         {
           now: () => $.clock.now(),
           sessionId: () => $.session.id(),
@@ -512,9 +543,10 @@ export function register(on: On, options: PluginOptions): void {
       root: string | undefined,
       outcome: 'skipped' | 'failed',
       shouldWrite = true,
+      extra?: Pick<UsageEvent, 'eligibleSavings' | 'minSavings'>,
     ) => {
       stats.last = `${request ?? 'unknown'} skipped: ${reason}`
-      if (shouldWrite) await writeShakeEvent(root, outcome, reason)
+      if (shouldWrite) await writeShakeEvent(root, outcome, reason, 0, 0, 0, [], extra)
       return { skip: `ctrscm: ${reason}` }
     }
     const writeShakeEvent = async (
@@ -525,6 +557,7 @@ export function register(on: On, options: PluginOptions): void {
       chars = 0,
       estimatedSavings = 0,
       artifactIds: string[] = [],
+      extra?: Pick<UsageEvent, 'eligibleSavings' | 'minSavings'>,
     ) => {
       await writeUsageEvent(
         config.usageLog,
@@ -542,6 +575,7 @@ export function register(on: On, options: PluginOptions): void {
           contextTokens: lastContext.tokens,
           contextPercent: lastContext.percent,
           adviseTokens: null,
+          ...extra,
         },
         {
           now: () => $.clock.now(),
@@ -552,9 +586,14 @@ export function register(on: On, options: PluginOptions): void {
       )
     }
     const eventRoot = () => quietRoot(config.artifactDir, () => $.env.get('HOME'), (text) => $.ui.log(text))
-    const fallback = async (reason: string, root: string | undefined, shouldWrite = true) => {
+    const fallback = async (
+      reason: string,
+      root: string | undefined,
+      shouldWrite = true,
+      extra?: Pick<UsageEvent, 'eligibleSavings' | 'minSavings'>,
+    ) => {
       stats.last = `${e.trigger} skipped: shake not applied`
-      if (shouldWrite) await writeShakeEvent(root, 'fallback', reason)
+      if (shouldWrite) await writeShakeEvent(root, 'fallback', reason, 0, 0, 0, [], extra)
       return config.fallback === 'builtin' ? next(e) : { skip: 'ctrscm: shake not applied' }
     }
     if (request !== undefined && !Array.isArray(e.messages)) return marked('no transcript', await eventRoot(), 'skipped')
@@ -572,9 +611,10 @@ export function register(on: On, options: PluginOptions): void {
           : config
     const selection = selectResults(e.messages, settings)
     if (selection.selected.length === 0) {
+      const extra = { eligibleSavings: selection.savings, minSavings: settings.minSavings }
       return request === undefined
-        ? fallback('nothing worth shaking', await eventRoot())
-        : marked('nothing worth shaking', await eventRoot(), 'skipped')
+        ? fallback('nothing worth shaking', await eventRoot(), true, extra)
+        : marked('nothing worth shaking', await eventRoot(), 'skipped', true, extra)
     }
     const chars = selection.selected.reduce((total, selected) => total + selected.text.length, 0)
     let root: string | undefined

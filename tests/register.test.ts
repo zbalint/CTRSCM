@@ -658,6 +658,20 @@ const idleHost: Plugin = {
     })
   },
 }
+const idleNothingHost: Plugin = {
+  name: 'idle-nothing-host',
+  tier: 'prepend',
+  register(on) {
+    on('session.compact', ($, e, next) => {
+      if (e.instructions !== 'ctrscm:idle') return next(e)
+      return next({
+        trigger: e.trigger,
+        instructions: e.instructions,
+        messages: [{ role: 'user', text: 'probe', toolUses: [] }],
+      })
+    })
+  },
+}
 
 function idleHarness(on: On, overrides: Record<string, string> = {}) {
   const writes: Array<{ path: string; text: string }> = []
@@ -837,6 +851,19 @@ test('idle prompt edit requests a marked Shake after a cold-cache gap', {
   expect(logs).toContain('CTRSCM: idle shake requested (idle 60 min)')
   expect(logs).toContain('test idle host compact ctrscm:idle')
   expect((await $.command.run(commandRunInput('ctrscm'))).text).toContain('this session: 1 passes')
+})
+test('idle nothing-eligible skip records the effective zero threshold', {
+  plugins: [idleNothingHost],
+}, async ($, on) => {
+  const h = idleHarness(on)
+  await seedIdleTurn($)
+  await h.clock.advance(60 * 60_000)
+  await idleEdit($)
+  const idleUsage = idleEvents(h.writes).find((event) => event.outcome === 'skipped')
+  expect(idleUsage).toEqual(expect.objectContaining({
+    eligibleSavings: 0,
+    minSavings: 0,
+  }))
 })
 
 test('idle resume before session start uses the later config file settings', {
@@ -1241,9 +1268,24 @@ test('idle prompt edit records a rejected compaction and preserves the edit', {
   await h.clock.advance(60 * 60_000)
   expect(await idleEdit($)).toEqual({ text: 'a', cursor: 1 })
   expect(h.logs.some((text) => text.startsWith('CTRSCM: idle shake rejected:'))).toBe(true)
-  expect(idleEvents(h.writes)).toEqual([
-    expect.objectContaining({ label: 'idle', outcome: 'failed', reason: 'compaction failed' }),
-  ])
+  expect(idleEvents(h.writes)).toEqual([{
+    version: 1,
+    at: '2026-10-05T01:00:00.000Z',
+    sessionId: 's-idle-matrix',
+    agentId: null,
+    event: 'shake',
+    label: 'idle',
+    outcome: 'failed',
+    reason: 'compaction failed',
+    results: 0,
+    chars: 0,
+    estimatedSavings: 0,
+    artifactIds: [],
+    contextTokens: 40000,
+    contextPercent: 20,
+    adviseTokens: null,
+    error: 'no implementation for session.compact',
+  }])
   expect((await $.command.run(commandRunInput('ctrscm'))).text).toContain('last: idle skipped: compaction failed')
 
   await $.session.measure({
@@ -1863,6 +1905,13 @@ test('one command registration failure is logged without disabling recovery', as
 
 test('marked calls skip without invoking the built-in fallback when nothing is eligible', async ($, on) => {
   let beneath = 0
+  const writes: Array<{ path: string; text: string }> = []
+  mock.clock(on, { now: Date.parse('2026-10-05T00:00:00.000Z') })
+  on('session.id', () => ({ value: 's-1' }))
+  on('fs.write', ($, e) => {
+    writes.push({ path: e.path, text: e.text })
+    return { value: undefined }
+  })
   mock.env(on, { HOME: '/home/example' })
   on('tool.register', ($, e) => ({ value: { tool: `mcp__ctrscm__${e.name}` } }))
   on('command.register', ($, e) => ({ value: { command: e.name } }))
@@ -1880,6 +1929,26 @@ test('marked calls skip without invoking the built-in fallback when nothing is e
     } as never),
   ).toEqual({ skip: 'ctrscm: nothing worth shaking' })
   expect(beneath).toBe(0)
+  expect(writes).toHaveLength(1)
+  expect(JSON.parse(writes[0]?.text ?? '')).toEqual({
+    version: 1,
+    at: '2026-10-05T00:00:00.000Z',
+    sessionId: 's-1',
+    agentId: null,
+    event: 'shake',
+    label: 'proactive',
+    outcome: 'skipped',
+    reason: 'nothing worth shaking',
+    results: 0,
+    chars: 0,
+    estimatedSavings: 0,
+    artifactIds: [],
+    contextTokens: null,
+    contextPercent: null,
+    adviseTokens: null,
+    eligibleSavings: 0,
+    minSavings: 4000,
+  })
 })
 
 test('marked calls skip when eligible savings are below the configured minimum', async ($, on) => {
@@ -1910,7 +1979,13 @@ test('marked calls skip when eligible savings are below the configured minimum',
     logs.push(e.text)
     return { value: undefined }
   })
+  on('fs.stat', () => ({
+    value: { kind: 'file', size: 128, mtimeMs: 0, isLink: false },
+  }))
   mock.env(on, { HOME: '/home/example' })
+  on('fs.read', () => ({
+    value: JSON.stringify({ minResultTokens: '1' }),
+  }))
   on('tool.register', ($, e) => ({ value: { tool: `mcp__ctrscm__${e.name}` } }))
   on('command.register', ($, e) => ({ value: { command: e.name } }))
   on('session.start', ($, e) => ({ cwd: e.cwd }))
@@ -1945,6 +2020,8 @@ test('marked calls skip when eligible savings are below the configured minimum',
     contextTokens: null,
     contextPercent: null,
     adviseTokens: null,
+    eligibleSavings: 161,
+    minSavings: 4000,
   })
 
 })
@@ -2001,6 +2078,8 @@ test('unmarked fallback writes its event before calling the builtin layer', asyn
     contextTokens: null,
     contextPercent: null,
     adviseTokens: null,
+    eligibleSavings: 0,
+    minSavings: 4000,
   })
 })
 test('shake command reports unavailable when recovery registration failed', async ($, on) => {
@@ -2085,7 +2164,7 @@ const deferredCompaction: Plugin = {
   },
 }
 
-function deferredHarness($: Engine, on: On) {
+function deferredHarness($: Engine, on: On, config: Record<string, string> = {}) {
   const logs: string[] = []
   const writes: Array<{ path: string; text: string }> = []
   const toasts: string[] = []
@@ -2131,6 +2210,10 @@ function deferredHarness($: Engine, on: On) {
   })
   mock.clock(on, { now: Date.parse('2026-10-06T00:00:00.000Z') })
   on('session.id', () => ({ value: 's-1' }))
+  on('fs.stat', () => ({
+    value: { kind: 'file', size: 128, mtimeMs: 0, isLink: false },
+  }))
+  on('fs.read', () => ({ value: JSON.stringify(config) }))
   on('tool.register', ($, e) => ({ value: { tool: `mcp__ctrscm__${e.name}` } }))
   on('command.register', ($, e) => ({ value: { command: e.name } }))
   on('fs.write', ($, e) => {
@@ -2141,6 +2224,7 @@ function deferredHarness($: Engine, on: On) {
     logs.push(e.text)
     return { value: undefined }
   })
+  on('turn.start', ($, e) => ({ turnId: e.turnId }))
   on('ui.toast', ($, e) => {
     toasts.push(e.text)
     return { value: undefined }
@@ -2155,6 +2239,50 @@ function deferredHarness($: Engine, on: On) {
   const status = () => $.command.run(commandRunInput('ctrscm'))
   return { logs, writes, toasts, requests, gate, host, measure, complete, status }
 }
+test('a rejected measure records one defer event with the tracked turn ids and context', {
+  plugins: [deferredCompaction],
+}, async ($, on) => {
+  const h = deferredHarness($, on)
+  await $.session.start({ cwd: '/work', surface: null, isInteractive: false })
+  await $.turn.start({ text: 'subagent', turnId: 'subagent-1' })
+  await $.turn.start({ text: 'main', turnId: 'main-1' })
+  await h.measure()
+  const deferEvents = h.writes
+    .filter(({ path }) => path.includes('/usage/'))
+    .map(({ text }) => JSON.parse(text))
+    .filter((event) => event.event === 'defer')
+  expect(deferEvents).toHaveLength(1)
+  expect(deferEvents[0]).toEqual(expect.objectContaining({
+    agentId: null,
+    event: 'defer',
+    kind: 'proactive',
+    error: 'no implementation for session.compact',
+    trackedTurns: ['subagent-1', 'main-1'],
+    contextTokens: 150000,
+    contextPercent: 75,
+  }))
+  await h.measure(140000, 70)
+  expect(h.writes.filter(({ path, text }) => path.includes('/usage/') && JSON.parse(text).event === 'defer')).toHaveLength(1)
+})
+
+test('a successful measure does not write a defer event', {
+  plugins: [deferredCompaction],
+}, async ($, on) => {
+  const h = deferredHarness($, on)
+  h.host.reject = false
+  await $.session.start({ cwd: '/work', surface: null, isInteractive: false })
+  await h.measure()
+  expect(h.writes.filter(({ path, text }) => path.includes('/usage/') && JSON.parse(text).event === 'defer')).toHaveLength(0)
+})
+
+test('usageLog off suppresses defer events', {
+  plugins: [deferredCompaction],
+}, async ($, on) => {
+  const h = deferredHarness($, on, { usageLog: 'off' })
+  await $.session.start({ cwd: '/work', surface: null, isInteractive: false })
+  await h.measure()
+  expect(h.writes.filter(({ path }) => path.includes('/usage/'))).toHaveLength(0)
+})
 
 
 test('a refused measure defers proactive compaction without reporting a failed pass', {
@@ -2167,6 +2295,7 @@ test('a refused measure defers proactive compaction without reporting a failed p
   ).rejects.toThrow('no implementation for session.compact')
   h.requests.length = 0
   await h.measure()
+  h.writes.length = 0
   expect(h.requests).toEqual([PROACTIVE_MARK])
   expect(h.logs).toEqual([
     'CTRSCM: requesting proactive shake (context 75%)',
@@ -2231,6 +2360,7 @@ test('a second rejection at turn end records failure and consumes the deferred r
     contextTokens: 150000,
     contextPercent: 75,
     adviseTokens: null,
+    error: 'no implementation for session.compact',
   })
   expect((await h.status()).text).toContain('last: proactive skipped: compaction failed')
   expect((await h.status()).text).toContain('pending: none')
@@ -2250,6 +2380,7 @@ test('a refused aggressive request is restored until turn-end failure and never 
     text: 'CTRSCM: aggressive shake queued; it runs when the next turn completes',
   })
   await h.measure()
+  h.writes.length = 0
   expect(h.requests).toEqual([AGGRESSIVE_MARK])
   expect(h.logs).toEqual([
     'CTRSCM: requesting aggressive shake',
@@ -2286,6 +2417,7 @@ test('a queued shake upgrades a deferred proactive request at turn end', {
   const h = deferredHarness($, on)
   await $.session.start({ cwd: '/work', surface: null, isInteractive: false })
   await h.measure()
+  h.writes.length = 0
   h.logs.length = 0
   h.requests.length = 0
   h.host.reject = false

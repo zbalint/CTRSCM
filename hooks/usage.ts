@@ -1,3 +1,7 @@
+import type { Request } from './trigger'
+
+export const ERROR_TEXT_LIMIT = 200
+
 export type UsageEvent = {
   version: 1
   at: string
@@ -14,6 +18,22 @@ export type UsageEvent = {
   contextTokens: number | null
   contextPercent: number | null
   adviseTokens: number | null
+  eligibleSavings?: number
+  minSavings?: number
+  error?: string
+}
+
+export type DeferUsageEvent = {
+  version: 1
+  at: string
+  sessionId: string | null
+  agentId: null
+  event: 'defer'
+  kind: Request
+  error: string
+  trackedTurns: string[]
+  contextTokens: number | null
+  contextPercent: number | null
 }
 
 export type TurnUsageEvent = {

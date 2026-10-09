@@ -119,6 +119,13 @@ What is known:
 - **Idle Shake (spec 12, off by default):** with `idleShakeMinutes` above 0, the first edit of the prompt box (a typed key or a paste) after that many minutes since the last answer, with no turn running, requests one Shake that ignores `minSavings` (`minResultTokens` and `protectTokens` still apply, and a context under 30000 tokens is left alone). The idea: after the prompt cache's lifetime (1 hour on the owner's account; the option is a number you set, for example 65) the next request rewrites the whole prefix anyway, so a smaller prefix is free. It runs while you are still typing; a rejection is logged and dropped, and the keystroke always goes through. Not covered: messages that arrive without any typing (phone, SDK, a2amx channel; a live probe showed an a2amx delivery reaches only `prompt.submit`, which refuses compaction, so nothing inside the mod can act on it), and non-composer origins (backlog B29). A resumed or forked session (spec 13) is seeded at start from the engine's own resume data (`classic.SessionStart`: seconds since the last response, context size, and whether the cache is likely expired), so the first edit after a long gap can idle-shake; whether the real host delivers that start event to a mod is unverified. The marked compaction from the prompt-box hook has run live in the real host (three passes in two sessions, `docs/verification.md` rounds 10 and 11); enable it in `~/.ctrscm/config.json` to try it.
 - `/compact` keeps its normal meaning; with custom instructions it always goes to the built-in summarizer.
 
+## Known limits
+
+- **A turn can overshoot the trigger (backlog B26).** The proactive trigger, the advice and the idle pass act between turns. No hook inside a running turn can both see the
+  context size and compact (a compaction requested from `session.measure` mid-turn is rejected by the host), so one turn of large reads can pass the trigger by a wide margin
+  (round 9: ~111k to ~336k against a 150k trigger). The pass runs at the end of that turn. On a 1M window the engine's own compaction (967k) stays the backstop. Keep
+  `protectTokens` and the trigger in mind when a task reads many large files in one turn.
+
 ## What it logs
 
 - `$.ui.log` lines in the session (they show in the interface): `CTRSCM: requesting proactive shake (context N%)`,

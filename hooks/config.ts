@@ -153,6 +153,13 @@ export function parseConfig(options: PluginOptions): { config: Config; problems:
     problems.push('option autoShake: must be "on" or "off"; using the default')
   }
 
+  if (config.autoShake && config.triggerTokens > 0 && config.minSavings > config.triggerTokens - config.protectTokens) {
+    // shortcut: this protectTokens bound ignores later context growth and triggerPercent hits at smaller contexts; upgrade to a percentage-aware rule if the owner wants it.
+    problems.push(
+      `option minSavings: ${config.minSavings} is above triggerTokens minus protectTokens (${config.triggerTokens - config.protectTokens}), so a proactive pass at the trigger cannot qualify; manual /shake and idle ignore it`,
+    )
+  }
+
   const usageLog = options.usageLog
   if (isBlankOption(usageLog)) {
     config.usageLog = DEFAULT_CONFIG.usageLog

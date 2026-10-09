@@ -146,6 +146,49 @@ test('autoShake accepts on/off strings and booleans', () => {
   })
 })
 
+test('warns when proactive minSavings exceeds the trigger savings ceiling', () => {
+  const parsed = parseConfig({
+    autoShake: 'on',
+    triggerTokens: '100000',
+    protectTokens: '20000',
+    minSavings: '100000',
+  })
+  expect(parsed.config.autoShake).toBe(true)
+  expect(parsed.config.triggerTokens).toBe(100000)
+  expect(parsed.config.protectTokens).toBe(20000)
+  expect(parsed.config.minSavings).toBe(100000)
+  expect(parsed.problems).toEqual([
+    'option minSavings: 100000 is above triggerTokens minus protectTokens (80000), so a proactive pass at the trigger cannot qualify; manual /shake and idle ignore it',
+  ])
+})
+
+test('skips the unreachable minSavings warning when its proactive bound is inactive or met', () => {
+  expect(
+    parseConfig({
+      autoShake: 'off',
+      triggerTokens: 100000,
+      protectTokens: 20000,
+      minSavings: 100000,
+    }).problems,
+  ).toEqual([])
+  expect(
+    parseConfig({
+      autoShake: 'on',
+      triggerTokens: 0,
+      protectTokens: 20000,
+      minSavings: 100000,
+    }).problems,
+  ).toEqual([])
+  expect(
+    parseConfig({
+      autoShake: 'on',
+      triggerTokens: 100000,
+      protectTokens: 20000,
+      minSavings: 80000,
+    }).problems,
+  ).toEqual([])
+})
+
 test('advice and usage options parse their literal forms and problems', () => {
   expect(parseConfig({ adviseTokens: '0' }).config.adviseTokens).toBe(0)
   expect(parseConfig({ adviseTokens: '150000', usageLog: 'off' }).config).toMatchObject({

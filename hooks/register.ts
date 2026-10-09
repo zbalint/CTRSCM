@@ -605,13 +605,14 @@ export function register(on: On, options: PluginOptions): void {
 
     const settings =
       request === 'aggressive'
-        ? { ...config, protectTokens: config.aggressiveProtectTokens, protectTurns: 0 }
+        ? { ...config, protectTokens: config.aggressiveProtectTokens, protectTurns: 0, minSavings: 0 }
         : request === 'idle'
           ? { ...config, minSavings: 0 }
           : config
     const selection = selectResults(e.messages, settings)
     if (selection.selected.length === 0) {
       const extra = { eligibleSavings: selection.savings, minSavings: settings.minSavings }
+      if (request === 'aggressive') $.ui.log('CTRSCM: aggressive shake skipped: nothing worth shaking')
       return request === undefined
         ? fallback('nothing worth shaking', await eventRoot(), true, extra)
         : marked('nothing worth shaking', await eventRoot(), 'skipped', true, extra)

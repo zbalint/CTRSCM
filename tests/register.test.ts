@@ -1724,6 +1724,150 @@ test('ordinary Shake protects the latest typed turn while queued shake overrides
   expect(writes.some(({ path, text }) => path.endsWith('/manifest.json') && text.includes('"toolUseId":"latest-turn"'))).toBe(true)
 })
 
+test('queued shake externalizes eligible results below the configured minimum savings', {
+  plugins: [protectTurnHost],
+}, async ($, on) => {
+  const logs: string[] = []
+  const writes: Array<{ path: string; text: string }> = []
+  mock.env(on, { HOME: '/home/example' })
+  mock.clock(on, { now: Date.parse('2026-10-05T00:00:00.000Z') })
+  on('session.id', () => ({ value: 's-1' }))
+  on('fs.stat', () => ({ value: { kind: 'file', size: 128, mtimeMs: 0, isLink: false } }))
+  on('fs.read', ($, e) => {
+    if (e.path === '/home/example/.ctrscm/config.json') {
+      return { value: JSON.stringify({ minSavings: '100000' }) }
+    }
+    const file = writes.find(({ path }) => path === e.path)
+    if (file === undefined) throw new Error(`missing ${e.path}`)
+    return { value: file.text }
+  })
+  on('fs.write', ($, e) => {
+    writes.push({ path: e.path, text: e.text })
+    return { value: undefined }
+  })
+  on('ui.log', ($, e) => {
+    logs.push(e.text)
+    return { value: undefined }
+  })
+  on('tool.register', ($, e) => ({ value: { tool: `mcp__ctrscm__${e.name}` } }))
+  on('command.register', ($, e) => ({ value: { command: e.name } }))
+  on('session.start', ($, e) => ({ cwd: e.cwd }))
+  on('session.measure', ($, e) => ({ changed: e.changed }))
+  await $.session.start({ cwd: '/work', surface: null, isInteractive: false })
+  expect(await $.command.run(commandRunInput('shake'))).toEqual({
+    text: 'CTRSCM: aggressive shake queued; it runs when the next turn completes',
+  })
+  await $.session.measure({
+    context: { window: 200000, tokens: 1, percent: 1 },
+    rateLimits: [],
+    changed: ['context'],
+  })
+  expect(logs).toContain('CTRSCM: shook 2 tool results (~39920 estimated tokens)')
+  const manifests = writes.filter(({ path }) => path.endsWith('/manifest.json'))
+  expect(manifests).toHaveLength(2)
+  const ids = manifests.map(({ path }) => path.split('/').at(-2))
+  const usage = writes.find(({ path }) => path.includes('/usage/'))
+  expect(JSON.parse(usage?.text ?? '')).toEqual({
+    version: 1,
+    at: '2026-10-05T00:00:00.000Z',
+    sessionId: 's-1',
+    agentId: null,
+    event: 'shake',
+    label: 'aggressive',
+    outcome: 'shook',
+    reason: null,
+    results: 2,
+    chars: 160000,
+    estimatedSavings: 39920,
+    artifactIds: ids,
+    contextTokens: 1,
+    contextPercent: 1,
+    adviseTokens: null,
+  })
+  expect(await $.tool.call({
+    tool: RECOVER_TOOL,
+    tool_use_id: 'recover-small-shake',
+    id: ids[0],
+    offset: 0,
+    maxChars: 4,
+  } as never)).toEqual({
+    result: `CTRSCM artifact ${ids[0]}\ntool: Read\nrange: 0..3 of 80000 chars\nmore: true\n\nxxxx`,
+  })
+  const compacted = await $.session.compact({
+    trigger: 'plugin',
+    instructions: AGGRESSIVE_MARK,
+    messages: protectTurnMessages,
+  } as never)
+  if (!('messages' in compacted) || compacted.messages === undefined) {
+    throw new Error('expected aggressive rewritten transcript')
+  }
+  expect(compacted.messages).toHaveLength(protectTurnMessages.length)
+  for (const index of [0, 1, 3, 4, 6]) {
+    expect(compacted.messages[index]).toEqual(protectTurnMessages[index])
+  }
+  for (const [index, toolUseId] of [[2, 'old-turn'], [5, 'latest-turn']] as const) {
+    const result = compacted.messages[index]?.toolResults?.[0]
+    expect(result?.tool_use_id).toBe(toolUseId)
+    expect(result?.isError).toBe(false)
+    expect(result?.text).toContain(PLACEHOLDER_PREFIX)
+    expect(result?.result).toBeUndefined()
+  }
+})
+
+test('aggressive marked empty selection logs its skip and records the zero threshold', async ($, on) => {
+  const writes: Array<{ path: string; text: string }> = []
+  const logs: string[] = []
+  let beneath = 0
+  mock.clock(on, { now: Date.parse('2026-10-05T00:00:00.000Z') })
+  on('session.id', () => ({ value: 's-1' }))
+  on('fs.write', ($, e) => {
+    writes.push({ path: e.path, text: e.text })
+    return { value: undefined }
+  })
+  on('ui.log', ($, e) => {
+    logs.push(e.text)
+    return { value: undefined }
+  })
+  mock.env(on, { HOME: '/home/example' })
+  on('tool.register', ($, e) => ({ value: { tool: `mcp__ctrscm__${e.name}` } }))
+  on('command.register', ($, e) => ({ value: { command: e.name } }))
+  on('session.start', ($, e) => ({ cwd: e.cwd }))
+  on('session.compact', ($, e) => {
+    beneath += 1
+    return { messages: e.messages }
+  })
+  await $.session.start({ cwd: '/work', surface: null, isInteractive: false })
+  expect(
+    await $.session.compact({
+      trigger: 'plugin',
+      instructions: AGGRESSIVE_MARK,
+      messages: [],
+    } as never),
+  ).toEqual({ skip: 'ctrscm: nothing worth shaking' })
+  expect(beneath).toBe(0)
+  expect(logs).toEqual(['CTRSCM: aggressive shake skipped: nothing worth shaking'])
+  expect(writes).toHaveLength(1)
+  expect(JSON.parse(writes[0]?.text ?? '')).toEqual({
+    version: 1,
+    at: '2026-10-05T00:00:00.000Z',
+    sessionId: 's-1',
+    agentId: null,
+    event: 'shake',
+    label: 'aggressive',
+    outcome: 'skipped',
+    reason: 'nothing worth shaking',
+    results: 0,
+    chars: 0,
+    estimatedSavings: 0,
+    artifactIds: [],
+    contextTokens: null,
+    contextPercent: null,
+    adviseTokens: null,
+    eligibleSavings: 0,
+    minSavings: 0,
+  })
+})
+
 test('marked calls bypass manual fallback and explain an absent transcript', async ($, on) => {
   let beneath = 0
   on('session.compact', ($, e) => {
@@ -2426,7 +2570,10 @@ test('a queued shake upgrades a deferred proactive request at turn end', {
   })
   await h.complete()
   expect(h.requests).toEqual([AGGRESSIVE_MARK])
-  expect(h.logs).toEqual(['CTRSCM: retrying aggressive shake at turn end'])
+  expect(h.logs).toEqual([
+    'CTRSCM: retrying aggressive shake at turn end',
+    'CTRSCM: aggressive shake skipped: nothing worth shaking',
+  ])
   expect(h.writes).toHaveLength(2)
   expect(JSON.parse(h.writes[1]?.text ?? '')).toEqual(expect.objectContaining({
     event: 'shake',

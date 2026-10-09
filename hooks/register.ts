@@ -111,15 +111,20 @@ export function register(on: On, options: PluginOptions): void {
   let lastContext: ContextSnapshot = { tokens: null, percent: null }
   let lastTurnAt: number | undefined
   let resumedContextTokens: number | undefined
-  let isTurnRunning = false
+  const runningTurns = new Set<string>()
   let lastCostUsd: number | null = null
   const stats: Stats = { passes: 0, results: 0, savings: 0, last: 'none yet' }
 
   on('classic.SessionStart', async ($, e, next) => {
+    if (e.source === 'resume' || e.source === 'fork' || e.source === 'clear') {
+      lastTurnAt = undefined
+      resumedContextTokens = undefined
+      lastContext = { tokens: null, percent: null }
+    }
+
     const seconds = e.seconds_since_last_response
     const contextTokens = e.context_tokens
     if (
-      config.idleShakeMinutes <= 0 ||
       (e.source !== 'resume' && e.source !== 'fork') ||
       e.prompt_cache_likely_expired !== true ||
       typeof seconds !== 'number' ||
@@ -131,13 +136,11 @@ export function register(on: On, options: PluginOptions): void {
     ) {
       return next(e)
     }
-    if (lastTurnAt === undefined) {
-      try {
-        lastTurnAt = (await $.clock.now()) - seconds * 1000
-        resumedContextTokens = contextTokens
-      } catch (error) {
-        $.ui.log(`CTRSCM: idle clock failed: ${errorMessage(error)}`)
-      }
+    try {
+      lastTurnAt = (await $.clock.now()) - seconds * 1000
+      resumedContextTokens = contextTokens
+    } catch (error) {
+      $.ui.log(`CTRSCM: idle clock failed: ${errorMessage(error)}`)
     }
     return next(e)
   })
@@ -297,7 +300,8 @@ export function register(on: On, options: PluginOptions): void {
           }
           try {
             await $.session.compact({ instructions: markOf(request) })
-          } catch {
+          } catch (error) {
+            $.ui.log(`CTRSCM: ${request} shake deferred to turn end: ${errorMessage(error)}`)
             wanted = request
             if (request === 'aggressive') isPending = true
           } finally {
@@ -342,15 +346,16 @@ export function register(on: On, options: PluginOptions): void {
     return next(e)
   })
   on('turn.start', ($, e, next) => {
-    isTurnRunning = true
+    runningTurns.add(e.turnId)
     return next(e)
   })
   on('turn.complete', async ($, e, next) => {
-    if (e.agentId === undefined) isTurnRunning = false
+    runningTurns.delete(e.turnId)
+    if (e.agentId === undefined) runningTurns.clear()
     const turnContext = { tokens: lastContext.tokens, percent: lastContext.percent }
     const turnCostUsd = lastCostUsd
     const result = await next(e)
-    if (e.reason === 'answer' && e.agentId === undefined) {
+    if (e.agentId === undefined) {
       try {
         lastTurnAt = await $.clock.now()
       } catch (error) {
@@ -420,7 +425,7 @@ export function register(on: On, options: PluginOptions): void {
       config.idleShakeMinutes <= 0 ||
       !config.autoShake ||
       e.origin.kind !== 'composer' ||
-      isTurnRunning ||
+      runningTurns.size > 0 ||
       !isRecoverReady ||
       isRequesting ||
       isPending ||
@@ -432,15 +437,19 @@ export function register(on: On, options: PluginOptions): void {
     ) {
       return next(e)
     }
+    isRequesting = true
     let now: number
     try {
       now = await $.clock.now()
     } catch (error) {
       $.ui.log(`CTRSCM: idle clock failed: ${errorMessage(error)}`)
+      isRequesting = false
       return next(e)
     }
-    if (now - lastTurnAt < config.idleShakeMinutes * 60000) return next(e)
-    isRequesting = true
+    if (now - lastTurnAt < config.idleShakeMinutes * 60000) {
+      isRequesting = false
+      return next(e)
+    }
     lastTurnAt = undefined
     resumedContextTokens = undefined
     $.ui.log(`CTRSCM: idle shake requested (idle ${config.idleShakeMinutes} min)`)
@@ -498,17 +507,16 @@ export function register(on: On, options: PluginOptions): void {
     ) {
       return next(e)
     }
-    const markedSkip = async (reason: string, root: string | undefined, shouldWrite = true) => {
+    const marked = async (
+      reason: string,
+      root: string | undefined,
+      outcome: 'skipped' | 'failed',
+      shouldWrite = true,
+    ) => {
       stats.last = `${request ?? 'unknown'} skipped: ${reason}`
-      if (shouldWrite) await writeShakeEvent(root, 'skipped', reason)
+      if (shouldWrite) await writeShakeEvent(root, outcome, reason)
       return { skip: `ctrscm: ${reason}` }
     }
-    const markedFailure = async (reason: string, root: string | undefined) => {
-      stats.last = `${request ?? 'unknown'} skipped: ${reason}`
-      await writeShakeEvent(root, 'failed', reason)
-      return { skip: `ctrscm: ${reason}` }
-    }
-    const trackedTrigger = e.trigger === 'manual' || e.trigger === 'auto' || e.trigger === 'plugin'
     const writeShakeEvent = async (
       root: string | undefined,
       outcome: Exclude<UsageEvent['outcome'], null>,
@@ -545,15 +553,15 @@ export function register(on: On, options: PluginOptions): void {
     }
     const eventRoot = () => quietRoot(config.artifactDir, () => $.env.get('HOME'), (text) => $.ui.log(text))
     const fallback = async (reason: string, root: string | undefined, shouldWrite = true) => {
-      if (trackedTrigger) stats.last = `${e.trigger} skipped: shake not applied`
+      stats.last = `${e.trigger} skipped: shake not applied`
       if (shouldWrite) await writeShakeEvent(root, 'fallback', reason)
       return config.fallback === 'builtin' ? next(e) : { skip: 'ctrscm: shake not applied' }
     }
-    if (request !== undefined && !Array.isArray(e.messages)) return markedSkip('no transcript', await eventRoot())
+    if (request !== undefined && !Array.isArray(e.messages)) return marked('no transcript', await eventRoot(), 'skipped')
     if (!isRecoverReady) {
       return request === undefined
         ? fallback('recovery tool not registered', await eventRoot())
-        : markedSkip('recovery tool not registered', await eventRoot())
+        : marked('recovery tool not registered', await eventRoot(), 'skipped')
     }
 
     const settings =
@@ -566,7 +574,7 @@ export function register(on: On, options: PluginOptions): void {
     if (selection.selected.length === 0) {
       return request === undefined
         ? fallback('nothing worth shaking', await eventRoot())
-        : markedSkip('nothing worth shaking', await eventRoot())
+        : marked('nothing worth shaking', await eventRoot(), 'skipped')
     }
     const chars = selection.selected.reduce((total, selected) => total + selected.text.length, 0)
     let root: string | undefined
@@ -577,12 +585,12 @@ export function register(on: On, options: PluginOptions): void {
       $.ui.log(`CTRSCM: artifact root lookup failed: ${errorMessage(error)}`)
       return request === undefined
         ? fallback('artifact root unavailable', undefined, false)
-        : markedSkip('artifact root unavailable', undefined, false)
+        : marked('artifact root unavailable', undefined, 'skipped', false)
     }
     if (root === undefined) {
       return request === undefined
         ? fallback('artifact root unavailable', undefined, false)
-        : markedSkip('artifact root unavailable', undefined, false)
+        : marked('artifact root unavailable', undefined, 'skipped', false)
     }
 
     const placeholders = new Map<string, string>()
@@ -616,22 +624,20 @@ export function register(on: On, options: PluginOptions): void {
       $.ui.log(`CTRSCM: artifact write failed after ${written} artifacts: ${errorMessage(error)}`)
       return request === undefined
         ? fallback('artifact write failed', root)
-        : markedFailure('artifact write failed', root)
+        : marked('artifact write failed', root, 'failed')
     }
 
     const messages = rebuild(e.messages, placeholders)
     $.ui.log(`CTRSCM: shook ${selection.selected.length} tool results (~${selection.savings} estimated tokens)`)
-    if (request !== undefined || trackedTrigger) {
-      stats.passes += 1
-      if (!passHintShown) {
-        $.ui.log('CTRSCM: a pass just ran; after a few more turns /ctrscm report shows what it saved')
-        passHintShown = true
-      }
-      stats.results += selection.selected.length
-      stats.savings += selection.savings
-      const label = request ?? e.trigger
-      stats.last = `${label} shook ${selection.selected.length} results (~${selection.savings} estimated tokens)`
+    stats.passes += 1
+    if (!passHintShown) {
+      $.ui.log('CTRSCM: a pass just ran; after a few more turns /ctrscm report shows what it saved')
+      passHintShown = true
     }
+    stats.results += selection.selected.length
+    stats.savings += selection.savings
+    const label = request ?? e.trigger
+    stats.last = `${label} shook ${selection.selected.length} results (~${selection.savings} estimated tokens)`
     await writeShakeEvent(
       root,
       'shook',

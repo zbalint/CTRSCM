@@ -839,6 +839,113 @@ test('idle prompt edit requests a marked Shake after a cold-cache gap', {
   expect((await $.command.run(commandRunInput('ctrscm'))).text).toContain('this session: 1 passes')
 })
 
+test('idle resume before session start uses the later config file settings', {
+  plugins: [idleHost],
+}, async ($, on) => {
+  const h = idleHarness(on, { idleShakeMinutes: '65' })
+  await classicSessionStart($, {
+    hook_event_name: 'SessionStart',
+    source: 'resume',
+    session_id: 's-idle-start-order',
+    transcript_path: '/tmp/idle-start-order.jsonl',
+    cwd: '/work',
+    seconds_since_last_response: 4000,
+    context_tokens: 40000,
+    prompt_cache_likely_expired: true,
+  })
+  await $.session.start({ cwd: '/work', surface: null, isInteractive: false })
+  expect(await idleEdit($)).toEqual({ text: 'a', cursor: 1 })
+  expect(h.logs.filter((text) => text === 'test idle host compact ctrscm:idle')).toEqual([
+    'test idle host compact ctrscm:idle',
+  ])
+  expect(idleEvents(h.writes)).toEqual([
+    expect.objectContaining({ label: 'idle', outcome: 'shook' }),
+  ])
+})
+
+test('idle resume resets a previous turn stamp before reseeding', {
+  plugins: [idleHost],
+}, async ($, on) => {
+  const h = idleHarness(on, { idleShakeMinutes: '65' })
+  await seedIdleTurn($)
+  await h.clock.advance(5 * 60_000)
+  await classicSessionStart($, {
+    hook_event_name: 'SessionStart',
+    source: 'resume',
+    session_id: 's-idle-reset-resume',
+    transcript_path: '/tmp/idle-reset-resume.jsonl',
+    cwd: '/work',
+    seconds_since_last_response: 4000,
+    context_tokens: 40000,
+    prompt_cache_likely_expired: true,
+  })
+  await idleEdit($)
+  expect(idleEvents(h.writes)).toHaveLength(1)
+})
+
+test('idle resume clears stale state when the cache is still warm', {
+  plugins: [idleHost],
+}, async ($, on) => {
+  const h = idleHarness(on, { idleShakeMinutes: '65' })
+  await seedIdleTurn($)
+  await h.clock.advance(70 * 60_000)
+  await classicSessionStart($, {
+    hook_event_name: 'SessionStart',
+    source: 'resume',
+    session_id: 's-idle-warm-resume',
+    transcript_path: '/tmp/idle-warm-resume.jsonl',
+    cwd: '/work',
+    seconds_since_last_response: 4000,
+    context_tokens: 40000,
+    prompt_cache_likely_expired: false,
+  })
+  await expectNoIdleEdit($, h)
+})
+
+test('clear resets completed-turn idle state', {
+  plugins: [idleHost],
+}, async ($, on) => {
+  const h = idleHarness(on, { idleShakeMinutes: '65' })
+  await seedIdleTurn($)
+  await h.clock.advance(70 * 60_000)
+  await classicSessionStart($, {
+    hook_event_name: 'SessionStart',
+    source: 'clear',
+    session_id: 's-idle-clear',
+    transcript_path: '/tmp/idle-clear.jsonl',
+    cwd: '/work',
+  })
+  await expectNoIdleEdit($, h)
+})
+
+test('startup preserves completed-turn idle state', {
+  plugins: [idleHost],
+}, async ($, on) => {
+  const h = idleHarness(on, { idleShakeMinutes: '65' })
+  await seedIdleTurn($)
+  await h.clock.advance(70 * 60_000)
+  await classicSessionStart($, {
+    hook_event_name: 'SessionStart',
+    source: 'startup',
+    session_id: 's-idle-startup-state',
+    transcript_path: '/tmp/idle-startup-state.jsonl',
+    cwd: '/work',
+  })
+  await idleEdit($)
+  expect(idleEvents(h.writes)).toHaveLength(1)
+})
+
+test('fast composer edits claim one idle request', {
+  plugins: [idleHost],
+}, async ($, on) => {
+  const h = idleHarness(on)
+  await seedIdleTurn($)
+  await h.clock.advance(60 * 60_000)
+  await Promise.all([idleEdit($), idleEdit($)])
+  expect(h.logs.filter((text) => text === 'CTRSCM: idle shake requested (idle 60 min)')).toHaveLength(1)
+  expect(idleEvents(h.writes)).toHaveLength(1)
+})
+
 test('idle prompt edit seeds from a resumed classic session', {
   plugins: [idleHost],
 }, async ($, on) => {
@@ -967,7 +1074,7 @@ test('idle resume seeding ignores ineligible classic session starts', {
   await expectNoIdleEdit($, h)
 })
 
-test('idle resume seeding stays disabled when idle Shake is off', {
+test('idle resume makes no idle request when idle Shake is off', {
   plugins: [idleHost],
 }, async ($, on) => {
   const h = idleHarness(on, { idleShakeMinutes: '0' })
@@ -986,7 +1093,7 @@ test('idle resume seeding stays disabled when idle Shake is off', {
   await expectNoIdleEdit($, h)
 })
 
-test('idle resume seeding stays disabled when auto Shake is off', {
+test('idle resume makes no idle request when auto Shake is off', {
   plugins: [idleHost],
 }, async ($, on) => {
   const h = idleHarness(on, { autoShake: 'off' })
@@ -1203,6 +1310,44 @@ test('idle prompt edit ignores a running turn', {
   await expectNoIdleEdit($, h)
 })
 
+test('idle prompt edit tracks a running subagent by turn id', {
+  plugins: [idleHost],
+}, async ($, on) => {
+  const h = idleHarness(on)
+  await seedIdleTurn($)
+  await $.turn.start({ text: 'subagent', turnId: 't-subagent-running' })
+  await h.clock.advance(60 * 60_000)
+  await expectNoIdleEdit($, h)
+  await $.turn.complete({
+    answer: '',
+    durationMs: 1,
+    isAborted: false,
+    turnId: 't-subagent-running',
+    reason: 'answer',
+    agentId: 'agent-1',
+  })
+  await idleEdit($)
+  expect(idleEvents(h.writes)).toHaveLength(1)
+})
+
+test('main completion clears leftover running turn ids', {
+  plugins: [idleHost],
+}, async ($, on) => {
+  const h = idleHarness(on)
+  await measureIdleContext($)
+  await $.turn.start({ text: 'leftover subagent', turnId: 't-leftover-subagent' })
+  await $.turn.complete({
+    answer: '',
+    durationMs: 1,
+    isAborted: false,
+    turnId: 't-main-self-heal',
+    reason: 'answer',
+  })
+  await h.clock.advance(60 * 60_000)
+  await idleEdit($)
+  expect(idleEvents(h.writes)).toHaveLength(1)
+})
+
 test('idle prompt edit ignores a subagent turn completion', {
   plugins: [idleHost],
 }, async ($, on) => {
@@ -1220,7 +1365,7 @@ test('idle prompt edit ignores a subagent turn completion', {
   await expectNoIdleEdit($, subagent)
 })
 
-test('idle prompt edit does not timestamp an interrupted turn', {
+test('idle prompt edit timestamps an interrupted main turn', {
   plugins: [idleHost],
 }, async ($, on) => {
   const h = idleHarness(on)
@@ -1233,6 +1378,23 @@ test('idle prompt edit does not timestamp an interrupted turn', {
     reason: 'aborted',
   })
   await h.clock.advance(60 * 60_000)
+  await idleEdit($)
+  expect(idleEvents(h.writes)).toHaveLength(1)
+})
+
+test('idle prompt edit timestamps an errored main turn', {
+  plugins: [idleHost],
+}, async ($, on) => {
+  const h = idleHarness(on, { idleShakeMinutes: '65' })
+  await seedIdleTurn($)
+  await h.clock.advance(70 * 60_000)
+  await $.turn.complete({
+    answer: '',
+    durationMs: 1,
+    isAborted: false,
+    turnId: 't-error',
+    reason: 'error',
+  })
   await expectNoIdleEdit($, h)
 })
 
@@ -2006,7 +2168,10 @@ test('a refused measure defers proactive compaction without reporting a failed p
   h.requests.length = 0
   await h.measure()
   expect(h.requests).toEqual([PROACTIVE_MARK])
-  expect(h.logs).toEqual(['CTRSCM: requesting proactive shake (context 75%)'])
+  expect(h.logs).toEqual([
+    'CTRSCM: requesting proactive shake (context 75%)',
+    'CTRSCM: proactive shake deferred to turn end: no implementation for session.compact',
+  ])
   expect(h.writes).toEqual([])
   expect((await h.status()).text).toContain('last: none yet')
   h.host.reject = false
@@ -2086,7 +2251,10 @@ test('a refused aggressive request is restored until turn-end failure and never 
   })
   await h.measure()
   expect(h.requests).toEqual([AGGRESSIVE_MARK])
-  expect(h.logs).toEqual(['CTRSCM: requesting aggressive shake'])
+  expect(h.logs).toEqual([
+    'CTRSCM: requesting aggressive shake',
+    'CTRSCM: aggressive shake deferred to turn end: no implementation for session.compact',
+  ])
   expect((await h.status()).text).toContain('pending: aggressive shake')
   expect(h.writes).toEqual([])
   h.logs.length = 0
@@ -2197,7 +2365,10 @@ test('a measurement while requesting does not make a second request or advice', 
   await h.measure(160000, 80)
   h.gate.release()
   await firstMeasure
-  expect(h.logs).toEqual(['CTRSCM: requesting proactive shake (context 75%)'])
+  expect(h.logs).toEqual([
+    'CTRSCM: requesting proactive shake (context 75%)',
+    'CTRSCM: proactive shake deferred to turn end: no implementation for session.compact',
+  ])
   expect(h.toasts).toEqual([])
   expect(h.requests).toEqual([PROACTIVE_MARK])
 })

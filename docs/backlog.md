@@ -42,14 +42,14 @@ Status: the running list of open items. It is a tracker, not a design: a decisio
 | B33 | Audit nits (no behavior change): `recover` needs only a read-only `Fs` type (`artifacts.ts` `readPage`); the artifact-root lookup is written four times beside `quietRoot` in `register.ts`; `tests/register.test.ts` (60 tests, 2,400 lines) repeats a 10-line `fs.write`/`fs.read`/`ui.log`/`session.id`/`tool.register` harness 20 to 29 times and wants a shared fixture | audit |
 | B34 | Audit N1: a passed invalid option shadows a valid config-file value (the problem line says "using the default" although a file value exists); consultant m_873: acceptable (logged, follows spec 9), at most reword the problem line | audit |
 | B35 | Audit N2/N5/N6 and two silent gaps (consultant m_873): `autoShake`/`usageLog` on/off parsing is duplicated (fold into a helper when a third on/off option arrives); `readPage` is typed with a write-capable `Fs`; `protectedTools` of an unexpected type is ignored without a problem line; a `stat` failure on the config file (EACCES) reads like a missing file | audit |
-| B36 | Owner session 2026-10-09: a manual `/shake` is an aggressive pass and still honors `minSavings`; with `minSavings` 100000 on a conversation-heavy architect session it ends `skipped: nothing worth shaking` with no UI line (a skip logs only the usage event). Consider letting `/shake` ignore `minSavings` as idle does, and one `$.ui.log` line on a marked skip | owner session, usage log |
-| B37 | `config.ts` could log a problem when `minSavings` exceeds `triggerTokens - protectTokens`, because a pass at the trigger can then never qualify (owner config 100000/100000/20000 never shook proactively). Cost view: at 305k context and a warm 1h cache, a 20k-token shake needs roughly 165 to 270 further requests to repay its cache rewrite (estimate, assumes 1.25x to 2x write and 0.1x read prices); idle shake is the case where a rewrite is free | owner session analysis |
 | B38 | Verify with spec 17 data whether the 18 `compaction failed` events are the turn-end retry hitting a still-running (sub-agent) turn: compare `defer.trackedTurns` with the turn id named in `defer.error` and the `error` on the following `failed` event. If tracked ids miss the blocking turn, the retry rule needs a fix | spec 17 |
 
 ## Closed
 
 | ID | Item | Closed by |
 | --- | --- | --- |
+| B36 | Manual `/shake` honored `minSavings` and skipped silently: aggressive now ignores it (like idle) and logs one line on a skip | spec 18 |
+| B37 | Warning when `minSavings` exceeds `triggerTokens - protectTokens` (value kept, logged once at start) | spec 18 |
 | B9 | Typecheck gate (Node installed 2026-10-05; probe passed) | spec 1 amendment 1 (section 13) |
 | B2 | Proactive compaction near a threshold (`session.measure`, marked `$.session.compact`) | spec 2 |
 | B4 | `/shake` (queued, runs at the next turn end) and `/ctrscm` status commands | spec 2 |

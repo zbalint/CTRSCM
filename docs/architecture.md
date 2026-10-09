@@ -58,7 +58,7 @@ removing it often avoids a summary altogether.
   for a marked proactive compaction at a configurable threshold, with `/shake` and `/ctrscm` commands.
   `precompute` answers `{ skip }` (documented as computing and keeping nothing). A marked request
   never reaches the built-in summarizer. The host refuses `$.session.compact` from a `command.run`
-  hook, so `/shake` queues a request that runs at the next measure.
+  hook, so `/shake` queues a request that runs at the next turn end (backlog B13).
 - **Selection:** a tool result is eligible when it has text, sits outside the protected recent tail,
   is not an error, is not a protected tool, is not already a placeholder, and is large enough to save
   tokens. Defaults: protect 16,000 estimated tokens, require 4,000 estimated savings, minimum result
@@ -86,6 +86,8 @@ removing it often avoids a summary altogether.
   primitive) and are inert without a manifest.
 
 ## Open verification items
+
+Status as of 2026-10-09 (details in `docs/verification.md`): V1 and V7 passed (round 1), V4 passed for explicit-id recovery and failed for the model seeing placeholders in a `-p` resume (see backlog B11), V3 is partly measured by the usage-log rounds 7 to 9 (cache creation after a pass), V2, V5 and V6 are not exercised. The table below is the original list.
 
 Not answerable from declarations; each needs a live run (`claude --plugin-dir .`). They gate a
 "v1 works" claim, not the implementation of spec 1.

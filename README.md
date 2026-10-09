@@ -12,9 +12,9 @@ a summarizer.
 
 ## Status
 
-Specs 1 to 9 are implemented and tested: Shake compaction with recovery, proactive Shake, `/shake`, `/ctrscm`, image-safe selection,
+Specs 1 to 14 are implemented and tested: Shake compaction with recovery, proactive Shake, `/shake`, `/ctrscm`, image-safe selection,
 recovery steering, placeholder labels, the usage log and advice, the turn-end compaction request, per-turn usage events with `/ctrscm report`,
-and the default config file.
+the default config file, the measured-saving report, idle Shake (off by default; also after a resumed or forked session) and `protectTurns`.
 
 - The plugin validates strictly; the mock-based suite covers configuration, proactive thresholds,
   cooldowns, command queues, status output, image safety, chunked artifacts, recovery pages and

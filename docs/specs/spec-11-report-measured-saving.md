@@ -6,7 +6,7 @@
 
 **Scope.** Edits: `hooks/report.ts`, `hooks/register.ts`, `tests/report.test.ts`, `tests/register.test.ts`. Does not touch: every other `hooks/*.ts`, other `tests/*`, `.claude-plugin/plugin.json`, `README.md`, `docs/*`, `AGENTS.md` (the architect edits `docs/usage.md`, `docs/backlog.md`, `docs/verification.md` after acceptance). No new dependency, no new file, no new config key. No commit, stage, merge or push: leave the diff uncommitted.
 
-**Location and branch:** main checkout `/home/zbalint/workspace/CTRSCM`, branch `develop`, at the commit that holds this spec. **Shared task `context_id`:** `ctrscm-report-measured`.
+**Location and branch:** main checkout `<repo>`, branch `develop`, at the commit that holds this spec. **Shared task `context_id`:** `ctrscm-report-measured`.
 **Public test seams:** `reportText` (pure), and the registered shook pass driven through `$` (the hint line in `logs`).
 
 ## 1. Why

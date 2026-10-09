@@ -21,8 +21,8 @@ and `claude plugin enable` have nothing to act on today.
 ## Quick start with the 150k example
 
 ```sh
-cd /home/zbalint/workspace/CTRSCM   # or any directory; the paths below are absolute
-claude --plugin-dir /home/zbalint/workspace/CTRSCM --settings /home/zbalint/workspace/CTRSCM/docs/examples/ctrscm-150k.json
+cd <repo>   # <repo> is your clone of this repository; use absolute paths below
+claude --plugin-dir <repo> --settings <repo>/docs/examples/ctrscm-150k.json
 ```
 
 The example (`docs/examples/ctrscm-150k.json`) requests a proactive Shake pass at 150000 tokens (`triggerPercent` 99 so the percentage trigger never

@@ -6,7 +6,7 @@
 
 **Scope.** Edits: `hooks/register.ts`, `tests/register.test.ts`. Does not touch any other file (the architect edits `docs/*` after acceptance). No new file, no new dependency, no new option. No commit, stage, merge or push: leave the diff uncommitted.
 
-**Location and branch:** main checkout `/home/zbalint/workspace/CTRSCM`, branch `develop`, at the commit that holds this spec. **Shared task `context_id`:** `ctrscm-audit-fixes`.
+**Location and branch:** main checkout `<repo>`, branch `develop`, at the commit that holds this spec. **Shared task `context_id`:** `ctrscm-audit-fixes`.
 **Public test seams:** the registered hooks driven through `$` (`classic.SessionStart` via `tests/fixtures/classicSessionStart.ts`, `prompt.edit` via `tests/fixtures/promptEdit.ts`, `session.start`, `session.measure`, `turn.start`, `turn.complete`, the mock clock, `session.compact`, `ui.log`, `fs.write`, `fs.read`).
 
 ## 1. Why

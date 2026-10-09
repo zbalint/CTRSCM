@@ -6,7 +6,7 @@
 
 **Scope.** Edits: `hooks/register.ts`, `tests/register.test.ts`, and one new file `tests/fixtures/classicSessionStart.ts` (section 3 item 2). Does not touch: any other `hooks/*`, `.claude-plugin/plugin.json`, `README.md`, other `tests/*`, `docs/*`, `types/`, `AGENTS.md` (the architect edits `AGENTS.md`, `docs/usage.md`, `docs/backlog.md` after acceptance). No new dependency. No commit, stage, merge or push: leave the diff uncommitted.
 
-**Location and branch:** main checkout `/home/zbalint/workspace/CTRSCM`, branch `develop`, at the commit that holds this spec. **Shared task `context_id`:** `ctrscm-idle-resume`.
+**Location and branch:** main checkout `<repo>`, branch `develop`, at the commit that holds this spec. **Shared task `context_id`:** `ctrscm-idle-resume`.
 **Public test seams:** the registered hooks driven through `$` (`classic.SessionStart` via the fixture, `prompt.edit` via `tests/fixtures/promptEdit.ts`, `turn.complete`, `session.measure`, the mock clock, `session.compact`, `ui.log`, `fs.write`).
 
 ## 1. Why

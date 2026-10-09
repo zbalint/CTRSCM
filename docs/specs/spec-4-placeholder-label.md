@@ -11,7 +11,7 @@ Does not touch: every other `hooks/*.ts`, `.claude-plugin/plugin.json`, `AGENTS.
 placeholder text, `docs/architecture.md` and `docs/backlog.md` at acceptance), `package*.json`, `tsconfig.json`. No new
 dependency. Do not commit, stage or merge: leave the diff uncommitted.
 
-**Location and branch:** main checkout `/home/zbalint/workspace/CTRSCM`, branch `develop`, starting at the commit that
+**Location and branch:** main checkout `<repo>`, branch `develop`, starting at the commit that
 holds this spec (spec 3's accepted implementation is already in the tree). **Shared task `context_id`:** `ctrscm-placeholder-label`.
 **Governing documents:** this spec; specs 1 to 3 stay in force except where section 3 amends them; `AGENTS.md`.
 **Public test seams:** `placeholderOf`, `selectResults`, `rebuild` in `hooks/shake.ts`; the registered hooks driven
@@ -111,7 +111,7 @@ in the transcript; any change to `hooks/recover.ts`, `hooks/artifacts.ts`, `hook
 
 ## 9. Acceptance
 
-Run from `/home/zbalint/workspace/CTRSCM` after implementation (all require the new code):
+Run from `<repo>` after implementation (all require the new code):
 
 ```sh
 . ~/.nvm/nvm.sh && npm ci && npx tsc -p tsconfig.json   # exit 0, no output

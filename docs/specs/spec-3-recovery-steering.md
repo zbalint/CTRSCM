@@ -13,7 +13,7 @@ dispositions in section 8.
 acceptance), `package*.json`, `tsconfig.json`. No new dependency. Do not commit, stage or merge: leave the diff
 uncommitted.
 
-**Location and branch:** main checkout `/home/zbalint/workspace/CTRSCM`, branch `develop`, starting at the commit
+**Location and branch:** main checkout `<repo>`, branch `develop`, starting at the commit
 that holds this spec. **Shared task `context_id`:** `ctrscm-recovery-steering`. **Governing documents:** this spec;
 specs 1 and 2 stay in force except where section 3 amends them; `AGENTS.md`. **Public test seams:** `recoverResult` and
 the recovery constants in `hooks/recover.ts`; the registered hooks driven through `$` in `tests/register.test.ts`
@@ -88,7 +88,7 @@ it); any change to artifacts or the manifest; `register.ts`.
 
 ## 7. Acceptance
 
-Run from `/home/zbalint/workspace/CTRSCM` after implementation (all require the new code):
+Run from `<repo>` after implementation (all require the new code):
 
 ```sh
 . ~/.nvm/nvm.sh && npm ci && npx tsc -p tsconfig.json   # exit 0, no output

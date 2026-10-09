@@ -6,7 +6,7 @@
 
 **Scope.** Edits: `hooks/shake.ts`, `hooks/config.ts`, `hooks/register.ts`, `hooks/status.ts`, `.claude-plugin/plugin.json`, `README.md` (the options table only), `tests/shake.test.ts`, `tests/config.test.ts`, `tests/status.test.ts`, `tests/register.test.ts`. Does not touch: other `hooks/*`, other `tests/*`, `docs/*`, `types/`, `AGENTS.md` (the architect edits `docs/usage.md` and `docs/backlog.md` after acceptance). No new dependency, no new file. No commit, stage, merge or push: leave the diff uncommitted.
 
-**Location and branch:** main checkout `/home/zbalint/workspace/CTRSCM`, branch `develop`, at the commit that holds this spec. **Shared task `context_id`:** `ctrscm-protect-turns`.
+**Location and branch:** main checkout `<repo>`, branch `develop`, at the commit that holds this spec. **Shared task `context_id`:** `ctrscm-protect-turns`.
 **Public test seams:** `protectedFrom` and `selectResults` (pure, `hooks/shake.ts`), `parseConfig` (pure), `statusText` (pure), and the registered hooks driven through `$`.
 
 ## 1. Why

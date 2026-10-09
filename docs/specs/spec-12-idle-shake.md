@@ -6,7 +6,7 @@
 
 **Scope.** Edits: `hooks/config.ts`, `hooks/trigger.ts`, `hooks/register.ts`, `hooks/status.ts`, `.claude-plugin/plugin.json`, `README.md` (the options table only), `tests/config.test.ts`, `tests/trigger.test.ts`, `tests/register.test.ts`, `tests/status.test.ts`, and one new file `tests/fixtures/promptEdit.ts` (section 3 item 5). Does not touch: `hooks/shake.ts`, `hooks/report.ts`, `hooks/usage.ts`, `hooks/usageLog.ts`, `hooks/configFile.ts`, `hooks/artifacts.ts`, `hooks/recover.ts`, other `tests/*`, `docs/*`, `types/` (the architect edits `AGENTS.md`,  `docs/usage.md`, `docs/backlog.md`, `docs/verification.md` after acceptance). No new dependency; no new file except the fixture above. No commit, stage, merge or push: leave the diff uncommitted.
 
-**Location and branch:** main checkout `/home/zbalint/workspace/CTRSCM`, branch `develop`, at the commit that holds this spec. **Shared task `context_id`:** `ctrscm-idle-shake`.
+**Location and branch:** main checkout `<repo>`, branch `develop`, at the commit that holds this spec. **Shared task `context_id`:** `ctrscm-idle-shake`.
 **Public test seams:** `markOf` / `requestOf` (pure), `parseConfig` (pure), `statusText` (pure), and the registered hooks driven through `$` (`turn.complete`, `turn.start`, the mock clock, `session.compact`, `ui.log`, `fs.write`).
 
 ## 1. Why

@@ -8,7 +8,7 @@
 `tests/register.test.ts`. Does not touch: `hooks/trigger.ts`, `hooks/shake.ts`, `hooks/artifacts.ts`, `hooks/recover.ts`, `hooks/usage.ts`, `hooks/usageLog.ts`, `hooks/report.ts`, `docs/*` and `AGENTS.md` (the architect edits `docs/usage.md`, `docs/architecture.md`,
 `docs/backlog.md`, the `AGENTS.md` module table). No new dependency. No commit, stage, merge or push: leave the diff uncommitted.
 
-**Location and branch:** main checkout `/home/zbalint/workspace/CTRSCM`, branch `develop`, at the commit that holds this spec. **Shared task `context_id`:** `ctrscm-config`.
+**Location and branch:** main checkout `<repo>`, branch `develop`, at the commit that holds this spec. **Shared task `context_id`:** `ctrscm-config`.
 **Public test seams:** `parseConfig` and `mergeOptions` (pure), `readConfigFile` over a fake `fs`, `statusText`, and the registered hooks driven through `$` (`$.fs.stat`/`$.fs.read` as an in-memory map, `$.env`).
 
 ## 1. Why

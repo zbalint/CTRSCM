@@ -12,7 +12,7 @@ and `## Commands` sections only, section 9a). Does not touch: `hooks/shake.ts`, 
 `docs/*` (the architect updates `docs/usage.md`, `docs/architecture.md`, `docs/backlog.md` and the module table at acceptance),
 `package*.json`, `tsconfig.json`, `hooks/hooks.json`. No new dependency. Do not commit, stage or merge: leave the diff uncommitted.
 
-**Location and branch:** main checkout `/home/zbalint/workspace/CTRSCM`, branch `develop`, starting at the commit that holds this
+**Location and branch:** main checkout `<repo>`, branch `develop`, starting at the commit that holds this
 spec. **Shared task `context_id`:** `ctrscm-usage-log`. **Governing documents:** this spec; specs 1 to 4 stay in force except where
 section 3 amends them; `AGENTS.md`. **Public test seams:** the pure functions of `hooks/config.ts`, `hooks/trigger.ts`,
 `hooks/status.ts`, `hooks/usage.ts`; the registered hooks driven through `$` (`$.session.start`, `$.session.measure`,
@@ -208,7 +208,7 @@ cleanup or rotation of the log or the artifacts; measuring the quality effect of
 
 ## 11. Acceptance
 
-Run from `/home/zbalint/workspace/CTRSCM` after implementation (all require the new code):
+Run from `<repo>` after implementation (all require the new code):
 
 ```sh
 . ~/.nvm/nvm.sh && npm ci && npx tsc -p tsconfig.json   # exit 0, no output

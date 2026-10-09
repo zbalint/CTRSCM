@@ -19,7 +19,7 @@ Does not touch: `hooks/artifacts.ts`, `hooks/recover.ts`, `tests/artifacts.test.
 `.gitattributes`, `a2amx.toml`, `package.json`, `package-lock.json`, `tsconfig.json`, `hooks/hooks.json`,
 anything outside the repository. No new dependency. Do not commit, stage or merge: leave the diff uncommitted.
 
-**Location and branch:** main checkout `/home/zbalint/workspace/CTRSCM`, branch `develop`, starting at the commit
+**Location and branch:** main checkout `<repo>`, branch `develop`, starting at the commit
 that holds this spec. **Shared task `context_id`:** `ctrscm-proactive-shake`. **Governing documents:** this spec;
 spec 1 (`docs/specs/spec-1-core-shake.md`, everything it locks and this spec does not change stays in force);
 `docs/architecture.md`; `AGENTS.md`. **Reference declarations:** `types/claude-code.d.ts` (already in the tree).
@@ -258,7 +258,7 @@ temptations to refuse: new modules beyond the two named, a persistent store of s
 
 ## 10. Acceptance
 
-Run from `/home/zbalint/workspace/CTRSCM` after implementation (all require the new code, so none runs at lock time):
+Run from `<repo>` after implementation (all require the new code, so none runs at lock time):
 
 ```sh
 . ~/.nvm/nvm.sh && npm ci && npx tsc -p tsconfig.json   # exit 0, no output

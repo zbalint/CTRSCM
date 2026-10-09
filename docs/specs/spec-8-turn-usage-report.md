@@ -9,7 +9,7 @@
 `hooks/artifacts.ts`, `hooks/recover.ts`, `hooks/config.ts`, `hooks/status.ts`, `.claude-plugin/plugin.json`, `docs/*` and `AGENTS.md` (the architect edits `docs/usage.md`, `docs/architecture.md`, `docs/backlog.md` and the
 `AGENTS.md` module table at acceptance). No new option, no new dependency. No commit, stage, merge or push: leave the diff uncommitted.
 
-**Location and branch:** main checkout `/home/zbalint/workspace/CTRSCM`, branch `develop`, at the commit that holds this spec. **Shared task `context_id`:** `ctrscm-report`.
+**Location and branch:** main checkout `<repo>`, branch `develop`, at the commit that holds this spec. **Shared task `context_id`:** `ctrscm-report`.
 **Public test seams:** `reportText` and `usageEventPath` (pure), `readUsageEvents` over a fake `fs`, and the registered hooks driven through `$` (`$.turn.complete`, `$.session.measure`, `$.command.run`, `$.fs` as an in-memory map).
 The `/ctrscm` default output (no arguments) is unchanged.
 

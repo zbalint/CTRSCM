@@ -27,7 +27,7 @@ build step and no dependency other than the one dev dependency `typescript` (sec
 `types/` are gitignored and are not deliverables. Do not commit, stage or merge:
 leave the diff uncommitted in the working tree.
 
-**Location and branch:** main checkout `/home/zbalint/workspace/CTRSCM`, branch `develop`.
+**Location and branch:** main checkout `<repo>`, branch `develop`.
 **Shared task `context_id`:** `ctrscm-core-shake`. **Governing documents:** this spec;
 `docs/architecture.md` (verified API facts); `AGENTS.md` (conventions). `docs/intent.md` is unverified
 background and loses to all three. **Reference declarations:** `mods/types/claude-code.d.ts` in a local
@@ -318,7 +318,7 @@ further, adding runtime dependencies, an options UI, or logging tool-result bodi
 
 ## 11. Acceptance
 
-Run from `/home/zbalint/workspace/CTRSCM` after implementation (all require the new code, so none runs at lock
+Run from `<repo>` after implementation (all require the new code, so none runs at lock
 time; feasibility was checked against the reference mod and the throwaway probe):
 
 ```sh

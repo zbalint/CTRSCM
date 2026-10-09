@@ -9,7 +9,7 @@
 `hooks/hooks.json`, `README.md`, `AGENTS.md`, `docs/*` (the architect updates `docs/usage.md`, `docs/architecture.md`, `docs/backlog.md` at
 acceptance), `package*.json`, `tsconfig.json`, the other test files. No new dependency. Do not commit, stage or merge: leave the diff uncommitted.
 
-**Location and branch:** main checkout `/home/zbalint/workspace/CTRSCM`, branch `develop`, starting at the commit that holds this spec.
+**Location and branch:** main checkout `<repo>`, branch `develop`, starting at the commit that holds this spec.
 **Shared task `context_id`:** `ctrscm-turn-complete`. **Governing documents:** this spec; specs 1 to 5 stay in force except where section 3 amends
 them; `AGENTS.md`. **Public test seams:** the registered hooks driven through `$` in `tests/register.test.ts` (`$.session.measure`,
 `$.turn.complete`, `$.session.compact` with `as never`, `$.command.run` with `tests/fixtures/commandRunInput.ts`).

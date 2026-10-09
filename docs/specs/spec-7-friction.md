@@ -9,7 +9,7 @@
 `docs/*` (the architect edits `docs/usage.md`, `docs/examples/ctrscm-150k.json`, `docs/verification.md`, `docs/backlog.md`), `AGENTS.md`, `package*.json`, `tsconfig.json`, the other tests.
 No commit, no stage, no merge: leave the diff uncommitted.
 
-**Location and branch:** main checkout `/home/zbalint/workspace/CTRSCM`, branch `develop`, starting at the commit that holds this spec. **Shared task `context_id`:** `ctrscm-friction`.
+**Location and branch:** main checkout `<repo>`, branch `develop`, starting at the commit that holds this spec. **Shared task `context_id`:** `ctrscm-friction`.
 **Public test seams:** `parseConfig` and `DEFAULT_CONFIG` (`tests/config.test.ts`), `placeholderOf` and `selectResults` (`tests/shake.test.ts`), `statusText` (`tests/status.test.ts`), the registered hooks through `$`
 (`tests/register.test.ts`).
 

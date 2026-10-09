@@ -310,3 +310,16 @@ Reported by the owner and read from `/ctrscm` and `/ctrscm report` output on 202
 | Report | `1 shook passes` at 22:11:09; the after figures read n/a because no turn had run since the pass |
 
 Caveats: one session, the idle gap was timed by the owner, not logged by the mod; the cache cost of the rebuild and the saving as measured from `contextTokens` were not read (no turn after the pass yet); `context:` still read "not measured yet" after the pass, expected until the next response (as in round 9) but not re-checked. Not exercised: a resumed session (B28), a message with no keystroke (B29), the idle pass skipping below the 30000-token context floor.
+
+## Round 11: idle Shake at the 65 minute setting, two sessions (2026-10-09)
+
+Read from `/ctrscm` output (owner) and the usage log (`label: idle` events; session id, time, outcome and counts only). `idleShakeMinutes` was 65 in `~/.ctrscm/config.json`; the owner was away for a walk, so the gap was real, not timed by hand. Two sessions had a long gap and each idle-shook on its first prompt-box edit afterwards.
+
+| Session | Time (UTC) | Outcome | Results | Estimated tokens saved | Context before |
+| --- | --- | --- | --- | --- | --- |
+| architect session | 2026-10-09 01:53:05 | shook | 5 | ~10619 | 144532 |
+| a second session (taken to be the consultant's; the log does not name the agent) | 2026-10-09 01:54:14 | shook | 16 | ~43335 | 188517 |
+
+Together with round 10 (22:11, 4 results, ~17535 at 120717 tokens) this is three live idle passes, two of them at the production setting. `/ctrscm` in the architect session read `last: idle shook 5 results (~10619 estimated tokens)` and `this session: 1 passes, 5 results shaken`, matching the log.
+
+Caveats: the estimated savings are chars/4 estimates (B27); the cache cost of the rebuild and the saving measured from `contextTokens` were not read; the second session's identity is inferred from timing and size. Not exercised: a resumed or forked session (spec 13 seeds from `classic.SessionStart`; whether the real host delivers that event to a mod is still unverified), a message with no keystroke (B29), the 30000-token floor skip.

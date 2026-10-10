@@ -12,7 +12,7 @@ a summarizer.
 
 ## Status
 
-Specs 1 to 18 are implemented and tested: Shake compaction with recovery, proactive Shake, `/shake`, `/ctrscm`, image-safe selection,
+Specs 1 to 19 are implemented and tested: Shake compaction with recovery, proactive Shake, `/shake`, `/ctrscm`, image-safe selection,
 recovery steering, placeholder labels, the usage log and advice, the turn-end compaction request, per-turn usage events with `/ctrscm report`,
 the default config file, the measured-saving report, idle Shake (off by default; also after a resumed or forked session) and `protectTurns`.
 

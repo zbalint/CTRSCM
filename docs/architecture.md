@@ -52,6 +52,20 @@ removing it often avoids a summary altogether.
   removed; one artifact per Shake pass; it also elides large fenced and XML blocks in prose (CTRSCM
   v1 does not).
 
+## What Shake is for here
+
+OMP uses Shake as a compaction method: it runs near the model's window and falls through to other methods when it frees too
+little (`docs/omp-comparison.md`). CTRSCM is a mod on a window that is often far larger than the working set, so it serves
+purposes of its own. A change is judged against these, not against OMP's trigger rules.
+
+- **Quota.** The idle shake rewrites the prefix only after the prompt cache has gone cold, when the next request pays for a full
+  rewrite anyway, so a smaller prefix costs nothing extra. This is the cheapest use and needs no savings threshold.
+- **Staying in the working zone (owner's stated purpose, not measured here).** A low trigger keeps the context lean even when
+  nothing forces it. Each pass rewrites the cached prefix, so this costs cache writes: the owner accepts that price on purpose.
+- **Containment near a limit.** With a high trigger it behaves like OMP's automatic Shake: a pass, then one stronger pass
+  (spec 19). It cannot guarantee a cap: a mod acts between turns, conversation text is never shaken, and the built-in
+  summarizer never runs unprompted.
+
 ## Design decisions (v1)
 
 - **Where it runs:** `session.compact` (spec 1) and, from spec 2, a `session.measure` hook that asks

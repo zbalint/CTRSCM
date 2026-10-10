@@ -327,7 +327,7 @@ Caveats: the estimated savings are chars/4 estimates (B27); the cache cost of th
 ## Round 12: V3, prompt-cache behavior after a Shake pass (2026-10-10)
 
 Run by a tester from a `git archive` snapshot of commit `068c7f4` in a scratch directory (the repository was not
-touched). Claude Code 2.1.295 (CLI in use at the time), alias `--model haiku` resolved to `claude-haiku-5-5` (usage.model in
+touched). Claude Code version not recorded by the tester; alias `--model haiku` resolved to `claude-haiku-5-5` (usage.model in
 stream-json); one extra datapoint on `claude-haiku-4-5-20251001`. One stream-json session per run, `/compact`
 sent as a user message to fire a manual Shake, synthetic fictional files (7 x about 19.8 KB, two seeds). Options: `autoShake`
 off, `protectTokens` 200, `minSavings` 100, `minResultTokens` 50, `aggressiveProtectTokens` 200. Per-request usage is the last

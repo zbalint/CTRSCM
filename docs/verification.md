@@ -360,3 +360,39 @@ Findings:
 Not covered: Sonnet or Opus (different static prefix and perhaps different breakpoints), cache expiry, a larger protected tail, a pass that
 edits only late results, built-in compaction (whether it rewrites the same way). Caveats: shared account cache across repeated identical fixtures (Phase B and C
 numbers unaffected), native memory feature active, one fixture size.
+
+## Round 13: keeping Haiku 5.5 under 100K tokens, cap test (2026-10-10)
+
+Tester run from `git archive` snapshots in a scratch directory (repository untouched), `claude-haiku-5-5` set explicitly (every real
+request reports it), a 36-turn script of one Read per turn (about 12.3k tokens each, synthetic fictional files, own seed per arm) with a recall
+question at turns 10, 20 and 30. Costs are the CLI's list-price accounting, not billing. Arm A: no mod. Arm E: snapshot `ec17815`,
+`autoShake` off, `protectTokens` 16000, `minSavings` 20000, `minResultTokens` 1000, `aggressiveProtectTokens` 4000, `fallback` skip; the driver sent
+`/compact` as a prompt whenever the last request's context was at least 85000 (emulated trigger). Arms B and C could not run (below).
+
+Headless limit: in `claude -p` and SDK sessions the engine refuses `$.session.compact` ("not available in a headless (-p / SDK) session yet:
+compaction here runs inside a turn (a /compact prompt)"), so the proactive and idle Shake never run there; eight requests deferred
+and failed as `compaction failed`, zero shakes (backlog B40).
+
+Measured rates (least squares of per-step cost on token counts, no assumed multipliers): up to 100K prompt tokens, cache read
+$0.010 and cache write $0.200 per million; above 100K, cache read $0.050 and cache write $1.00 per million. The higher rate is exactly 5x and
+applies to the **whole prompt** of any request whose prompt exceeds 100K, not only to the part beyond it.
+
+| | A (no mod) | E (shakes) |
+| --- | --- | --- |
+| Cost at turn 36 | $1.2022 | $0.4901 (-59%) |
+| Cost at turn 20 | $0.4097 | $0.1887 (-54%) |
+| Break-even | | turn 8 to 9 |
+| Requests above 100K | 60 of 75 (80%) | 24 of 81 (30%) |
+| Max context | 453,284 | 134,611 |
+| Average cache read per request | 223,901 | 73,249 |
+
+Eight shakes. Each rewrote about 47k to 68k tokens in cache (mean about 60k, about $0.012 at the sub-100K write rate), the first request after
+reading only the static prefix (4,264 tokens), as in round 12; seven measured penalties total about $0.084. Measured context drop per
+shake was about 48k tokens for four results against an estimate of about 20.5k, so the estimate runs at roughly 43% of real (B27): `minSavings`
+20000 in estimated tokens needed about four results, which is why shakes happened at 99k to 135k and not at 85k. Fifteen more `/compact` attempts
+ended `nothing worth shaking`, free and with no model call. Recall questions were answered correctly 3 of 3 after shakes, each through the
+recovery tool. A session that never passes about 90k of context pays nothing extra and gains nothing.
+
+Not covered: the mod's own trigger, cooldown and escalation (needs an interactive session), Sonnet or Opus prices, a conversation-heavy workload
+(this one is all tool results, so the share removed is large), variance (one run per arm), cache expiry (runs were back to back).
+Total spend about $2.91 of a $3 cap.

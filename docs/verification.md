@@ -323,3 +323,40 @@ Read from `/ctrscm` output (owner) and the usage log (`label: idle` events; sess
 Together with round 10 (22:11, 4 results, ~17535 at 120717 tokens) this is three live idle passes, two of them at the production setting. `/ctrscm` in the architect session read `last: idle shook 5 results (~10619 estimated tokens)` and `this session: 1 passes, 5 results shaken`, matching the log.
 
 Caveats: the estimated savings are chars/4 estimates (B27); the cache cost of the rebuild and the saving measured from `contextTokens` were not read; the second session's identity is inferred from timing and size. Not exercised: a resumed or forked session (spec 13 seeds from `classic.SessionStart`; whether the real host delivers that event to a mod is still unverified), a message with no keystroke (B29), the 30000-token floor skip.
+
+## Round 12: V3, prompt-cache behavior after a Shake pass (2026-10-10)
+
+Run by a tester from a `git archive` snapshot of commit `068c7f4` in a scratch directory (the repository was not
+touched). Claude Code 2.1.295 (CLI in use at the time), alias `--model haiku` resolved to `claude-haiku-5-5` (usage.model in
+stream-json); one extra datapoint on `claude-haiku-4-5-20251001`. One stream-json session per run, `/compact`
+sent as a user message to fire a manual Shake, synthetic fictional files (7 x about 19.8 KB, two seeds). Options: `autoShake`
+off, `protectTokens` 200, `minSavings` 100, `minResultTokens` 50, `aggressiveProtectTokens` 200. Per-request usage is the last
+assistant event per message id. Whole runs took 10 to 20 seconds, so cache expiry was not exercised.
+
+| Step (Haiku 5.5, seed 101) | Context before | Cache write | Cache read |
+| --- | --- | --- | --- |
+| Four Reads, then questions | grows to 54,787 | about 12,300 per Read, 41 per question | the whole previous context |
+| Shake 1, first request after | 54,787 | 14,578 | 4,264 (the static prefix only) |
+| Follow-up questions | 18,844 | 42 to 66 | the whole context |
+| Three more Reads, then Shake 2, first request after | 56,339 | 15,948 | 4,264 |
+| Follow-up questions | 20,214 | 42 to 66 | the whole context |
+
+Seed 202 and the 4.5 run show the same pattern (static prefix 4,264 tokens on 5.5 and 7,378 on 4.5). Control sessions
+without shakes wrote 41 to 94 tokens per turn and reached 86k to 92k of context.
+
+Findings:
+
+- The first request after a Shake reads only the static prefix (system prompt and tools) from cache and writes everything else, **every
+  time**, including a second Shake after 20k of growth. The hypothesis that a later Shake rewrites only the growth plus the protected tail is
+  refuted on this setup. The earlier reading of the owner's usage log (a later pass with a large cache read) was a
+  misreading of whole-turn sums.
+- So the cost of one Shake is about one write of the post-Shake context (14.5k to 16k tokens here), after which turns cost the same as the control at a
+  context 35k to 70k smaller. Inferred mechanism, not tested: the CLI sets cache breakpoints only at the static prefix and at the end of the
+  conversation, so a prefix that ends at an edited result was never a cached entry.
+- Measured context drop per pass was about 36k tokens against an estimated saving of 15,381 (43%): numbered Read output is about
+  12.3k real tokens per result and 5.1k estimated (B27).
+- Cost (CLI list price): 5.5 runs $0.025 to $0.031 each, 4.5 runs about $0.30 each; total about $0.75.
+
+Not covered: Sonnet or Opus (different static prefix and perhaps different breakpoints), cache expiry, a larger protected tail, a pass that
+edits only late results, built-in compaction (whether it rewrites the same way). Caveats: shared account cache across repeated identical fixtures (Phase B and C
+numbers unaffected), native memory feature active, one fixture size.

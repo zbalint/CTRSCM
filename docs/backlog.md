@@ -43,6 +43,7 @@ Status: the running list of open items. It is a tracker, not a design: a decisio
 | B34 | Audit N1: a passed invalid option shadows a valid config-file value (the problem line says "using the default" although a file value exists); consultant m_873: acceptable (logged, follows spec 9), at most reword the problem line | audit |
 | B35 | Audit N2/N5/N6 and two silent gaps (consultant m_873): `autoShake`/`usageLog` on/off parsing is duplicated (fold into a helper when a third on/off option arrives); `readPage` is typed with a write-capable `Fs`; `protectedTools` of an unexpected type is ignored without a problem line; a `stat` failure on the config file (EACCES) reads like a missing file | audit |
 | B38 | Verify with spec 17 data whether the 18 `compaction failed` events are the turn-end retry hitting a still-running (sub-agent) turn: compare `defer.trackedTurns` with the turn id named in `defer.error` and the `error` on the following `failed` event. If tracked ids miss the blocking turn, the retry rule needs a fix | spec 17 |
+| B39 | Round 12 (V3): every Shake rewrites about the whole post-Shake context in cache (not growth plus tail), so a pass pays back only when it removes a large share of the context (rule of thumb, unverified prices: at least about 30% of the post-Shake context to repay within 20 turns on a 1-hour cache). `minSavings` is absolute tokens; consider a fraction-of-context threshold, and a second pass (spec 19 escalation) costs a second full rewrite | round 12, owner session |
 
 ## Closed
 

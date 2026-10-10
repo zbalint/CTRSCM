@@ -101,7 +101,7 @@ purposes of its own. A change is judged against these, not against OMP's trigger
 
 ## Open verification items
 
-Status as of 2026-10-09 (details in `docs/verification.md`): V1 and V7 passed (round 1), V4 passed for explicit-id recovery and failed for the model seeing placeholders in a `-p` resume (see backlog B11), V3 is partly measured by the usage-log rounds 7 to 9 (cache creation after a pass), V2, V5 and V6 are not exercised. The table below is the original list.
+Status as of 2026-10-09 (details in `docs/verification.md`): V1 and V7 passed (round 1), V4 passed for explicit-id recovery and failed for the model seeing placeholders in a `-p` resume (see backlog B11), V3 is measured in round 12 (2026-10-10: the first request after any Shake rewrites everything except the static prefix; a second Shake does the same, so each pass costs about one write of the post-Shake context) and partly by the usage-log rounds 7 to 9, V2, V5 and V6 are not exercised. The table below is the original list.
 
 Not answerable from declarations; each needs a live run (`claude --plugin-dir .`). They gate a
 "v1 works" claim, not the implementation of spec 1.

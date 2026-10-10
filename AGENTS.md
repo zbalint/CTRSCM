@@ -96,6 +96,7 @@ These hold in every spec. A change that breaks one needs an owner decision.
 | `docs/architecture.md` | The design, the verified Mod API facts, open verification items |
 | `docs/backlog.md` | The running list of open items; a tracker, not a design |
 | `docs/specs/spec-N-name.md` | One locked spec per implementation slice |
+| `docs/omp-comparison.md` | Reference table: OMP's Shake and compaction-trigger defaults beside CTRSCM's defaults. Not a spec |
 | `docs/intent.md` | The original ChatGPT-generated intent document. **Unverified input**, not a spec; where it disagrees with `docs/architecture.md` or a spec, they win |
 
 ## Public repository rules

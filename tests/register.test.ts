@@ -2,7 +2,7 @@ import { expect, mock, test, type Engine, type Plugin } from 'claude-code/testin
 import type { ClassicEventOf, On, SessionMeasureInput, SessionMessage, SessionUsage, TurnCompleteInput } from 'claude-code'
 import { isArtifactId } from '../hooks/artifacts'
 import { PLACEHOLDER_PREFIX, RECOVER_TOOL } from '../hooks/shake'
-import { AGGRESSIVE_MARK, PROACTIVE_MARK } from '../hooks/trigger'
+import { AGGRESSIVE_MARK, ESCALATE_MARK, PROACTIVE_MARK } from '../hooks/trigger'
 import { commandRunInput } from './fixtures/commandRunInput'
 import { usageEventPath } from '../hooks/usage'
 import { classicSessionStart } from './fixtures/classicSessionStart'
@@ -1480,6 +1480,7 @@ test('advice sequence follows request and advice cooldowns with literal events',
   })
   on('session.start', ($, e) => ({ cwd: e.cwd }))
   on('session.measure', ($, e) => ({ changed: e.changed }))
+  on('turn.complete', () => ({ text: 'answer kept' }))
   await $.session.start({ cwd: '/work', surface: null, isInteractive: false })
 
   const measure = (tokens: number, percent: number, changed: SessionMeasureInput['changed'] = ['context']) =>
@@ -1488,10 +1489,21 @@ test('advice sequence follows request and advice cooldowns with literal events',
       rateLimits: [],
       changed,
     })
+  const complete = (turnId: string) =>
+    $.turn.complete({
+      answer: '',
+      durationMs: 1,
+      isAborted: false,
+      turnId,
+      reason: 'answer',
+    })
   await measure(150000, 75)
   await measure(149999, 75)
+  await complete('t-advice-1')
   await measure(150000, 75)
+  await complete('t-advice-2')
   await measure(160000, 80)
+  await complete('t-advice-3')
   await measure(160000, 80)
   await measure(160000, 80, ['rateLimits'])
 
@@ -1503,7 +1515,8 @@ test('advice sequence follows request and advice cooldowns with literal events',
   expect(toasts).toEqual([
     'CTRSCM: context is 150000 tokens (advice threshold 150000); consider /compact or a new session',
   ])
-  expect(writes).toHaveLength(3)
+  expect(writes).toHaveLength(6)
+  expect(writes.map(({ text }) => JSON.parse(text).event).filter((event) => event === 'turn')).toHaveLength(3)
   expect(JSON.parse(writes[0]?.text ?? '')).toEqual({
     version: 1,
     at: '2026-10-05T00:00:00.000Z',
@@ -1521,7 +1534,7 @@ test('advice sequence follows request and advice cooldowns with literal events',
     contextPercent: 75,
     adviseTokens: null,
   })
-  expect(JSON.parse(writes[1]?.text ?? '')).toEqual({
+  expect(JSON.parse(writes[2]?.text ?? '')).toEqual({
     version: 1,
     at: '2026-10-05T00:00:00.000Z',
     sessionId: 's-1',
@@ -1538,7 +1551,7 @@ test('advice sequence follows request and advice cooldowns with literal events',
     contextPercent: 75,
     adviseTokens: 150000,
   })
-  expect(JSON.parse(writes[2]?.text ?? '')).toEqual({
+  expect(JSON.parse(writes[5]?.text ?? '')).toEqual({
     version: 1,
     at: '2026-10-05T00:00:00.000Z',
     sessionId: 's-1',
@@ -1563,6 +1576,8 @@ test('session measure ignores unrelated changes and honors the proactive cooldow
   on('session.id', () => ({ value: 's-1' }))
   on('fs.write', () => ({ value: undefined }))
   mock.env(on, { HOME: '/home/example' })
+  on('fs.stat', () => ({ value: { kind: 'file', size: 32, mtimeMs: 0, isLink: false } }))
+  on('fs.read', () => ({ value: JSON.stringify({ cooldownTurns: '2' }) }))
   on('tool.register', ($, e) => ({ value: { tool: `mcp__ctrscm__${e.name}` } }))
   on('command.register', ($, e) => ({ value: { command: e.name } }))
   on('ui.log', ($, e) => {
@@ -1571,8 +1586,18 @@ test('session measure ignores unrelated changes and honors the proactive cooldow
   })
   on('session.start', ($, e) => ({ cwd: e.cwd }))
   on('session.measure', ($, e) => ({ changed: e.changed }))
+  on('turn.complete', () => ({ text: 'answer kept' }))
   await $.session.start({ cwd: '/work', surface: null, isInteractive: false })
 
+  const complete = (turnId: string, agentId?: string) =>
+    $.turn.complete({
+      answer: '',
+      durationMs: 1,
+      isAborted: false,
+      turnId,
+      reason: 'answer',
+      agentId,
+    })
   await $.session.measure({
     context: { window: 200000, percent: 75 },
     rateLimits: [],
@@ -1588,8 +1613,11 @@ test('session measure ignores unrelated changes and honors the proactive cooldow
   await $.session.measure(measurement)
   await $.session.measure(measurement)
   expect(logs).toEqual(['CTRSCM: requesting proactive shake (context 75%)'])
+  await complete('t-cooldown-subagent', 'agent-1')
   await $.session.measure(measurement)
   expect(logs).toEqual(['CTRSCM: requesting proactive shake (context 75%)'])
+  await complete('t-cooldown-main-1')
+  await complete('t-cooldown-main-2')
   await $.session.measure(measurement)
   expect(logs).toEqual([
     'CTRSCM: requesting proactive shake (context 75%)',
@@ -1632,7 +1660,11 @@ const protectTurnHost: Plugin = {
   tier: 'prepend',
   register(on) {
     on('session.compact', ($, e, next) => {
-      if (e.instructions !== 'ctrscm:proactive' && e.instructions !== 'ctrscm:aggressive') return next(e)
+      if (
+        e.instructions !== 'ctrscm:proactive' &&
+        e.instructions !== 'ctrscm:aggressive' &&
+        e.instructions !== 'ctrscm:escalate'
+      ) return next(e)
       const text = 'x'.repeat(80000)
       const fallbackMessages: SessionMessage[] = [
         { role: 'user', text: 'first', toolUses: [], toolResults: [] },
@@ -1724,6 +1756,393 @@ test('ordinary Shake protects the latest typed turn while queued shake overrides
   expect(writes.some(({ path, text }) => path.endsWith('/manifest.json') && text.includes('"toolUseId":"latest-turn"'))).toBe(true)
 })
 
+test('a successful proactive pass requests one escalation while still over the trigger', {
+  plugins: [protectTurnHost],
+}, async ($, on) => {
+  const logs: string[] = []
+  const writes: Array<{ path: string; text: string }> = []
+  mock.env(on, { HOME: '/home/example' })
+  mock.clock(on, { now: Date.parse('2026-10-05T00:00:00.000Z') })
+  on('session.id', () => ({ value: 's-escalate' }))
+  on('fs.stat', () => ({ value: { kind: 'file', size: 128, mtimeMs: 0, isLink: false } }))
+  on('fs.read', () => ({
+    value: JSON.stringify({
+      triggerTokens: '50000',
+      triggerPercent: '99',
+      cooldownTurns: '3',
+      protectTokens: '0',
+      protectTurns: '0',
+      aggressiveProtectTokens: '0',
+      minResultTokens: '1',
+      minSavings: '39920',
+      protectedTools: 'none',
+    }),
+  }))
+  on('fs.write', ($, e) => {
+    writes.push({ path: e.path, text: e.text })
+    return { value: undefined }
+  })
+  on('tool.register', ($, e) => ({ value: { tool: `mcp__ctrscm__${e.name}` } }))
+  on('command.register', ($, e) => ({ value: { command: e.name } }))
+  on('ui.log', ($, e) => {
+    logs.push(e.text)
+    return { value: undefined }
+  })
+  on('session.start', ($, e) => ({ cwd: e.cwd }))
+  on('session.measure', ($, e) => ({ changed: e.changed }))
+  await $.session.start({ cwd: '/work', surface: null, isInteractive: false })
+  const measure = (tokens: number) =>
+    $.session.measure({
+      context: { window: 200000, tokens, percent: tokens / 2000 },
+      rateLimits: [],
+      changed: ['context'],
+    })
+
+  await measure(50000)
+  expect(logs).toContain('CTRSCM: requesting proactive shake (context 25%)')
+  expect(logs).toContain('CTRSCM: shook 2 tool results (~39920 estimated tokens)')
+
+  logs.length = 0
+  await measure(50000)
+  expect(logs).toContain('CTRSCM: requesting escalation shake (context 25%)')
+  expect(logs).toContain('CTRSCM: shook 2 tool results (~39920 estimated tokens)')
+
+  logs.length = 0
+  await measure(50000)
+  await measure(40000)
+  expect(logs).toEqual([])
+  const shakeEvents = writes
+    .filter(({ path }) => path.includes('/usage/'))
+    .map(({ text }) => JSON.parse(text))
+    .filter((event) => event.event === 'shake')
+  expect(shakeEvents.map(({ label, outcome, estimatedSavings }) => ({
+    label,
+    outcome,
+    estimatedSavings,
+  }))).toEqual([
+    { label: 'proactive', outcome: 'shook', estimatedSavings: 39920 },
+    { label: 'escalate', outcome: 'shook', estimatedSavings: 39920 },
+  ])
+})
+
+
+test('escalation at the savings boundary shakes and a below-bound skip gates proactive growth', {
+  plugins: [protectTurnHost],
+}, async ($, on) => {
+  const logs: string[] = []
+  const writes: Array<{ path: string; text: string }> = []
+  mock.env(on, { HOME: '/home/example' })
+  mock.clock(on, { now: Date.parse('2026-10-05T00:00:00.000Z') })
+  on('session.id', () => ({ value: 's-escalate-gate' }))
+  on('fs.stat', () => ({ value: { kind: 'file', size: 128, mtimeMs: 0, isLink: false } }))
+  on('fs.read', () => ({
+    value: JSON.stringify({
+      triggerTokens: '100000',
+      triggerPercent: '99',
+      cooldownTurns: '3',
+      protectTokens: '0',
+      protectTurns: '0',
+      aggressiveProtectTokens: '0',
+      minResultTokens: '1',
+      minSavings: '39921',
+      protectedTools: 'none',
+    }),
+  }))
+  on('fs.write', ($, e) => {
+    writes.push({ path: e.path, text: e.text })
+    return { value: undefined }
+  })
+  on('tool.register', ($, e) => ({ value: { tool: `mcp__ctrscm__${e.name}` } }))
+  on('command.register', ($, e) => ({ value: { command: e.name } }))
+  on('ui.log', ($, e) => {
+    logs.push(e.text)
+    return { value: undefined }
+  })
+  on('session.start', ($, e) => ({ cwd: e.cwd }))
+  on('session.measure', ($, e) => ({ changed: e.changed }))
+  on('turn.complete', ($, e) => ({ text: e.answer }))
+  await $.session.start({ cwd: '/work', surface: null, isInteractive: false })
+  const measure = (tokens: number) =>
+    $.session.measure({
+      context: { window: 200000, tokens, percent: tokens / 2000 },
+      rateLimits: [],
+      changed: ['context'],
+    })
+  const complete = (turnId: string) =>
+    $.turn.complete({
+      answer: '',
+      durationMs: 1,
+      isAborted: false,
+      turnId,
+      reason: 'answer',
+    })
+
+  expect(await $.command.run(commandRunInput('shake'))).toEqual({
+    text: 'CTRSCM: aggressive shake queued; it runs when the next turn completes',
+  })
+  await measure(100000)
+  await measure(100000)
+  const skipped = await $.session.compact({
+    trigger: 'plugin',
+    instructions: ESCALATE_MARK,
+    messages: protectTurnMessages,
+  } as never)
+  expect(skipped).toEqual({ skip: 'ctrscm: nothing worth shaking' })
+  const escalationSkips = writes
+    .filter(({ path, text }) => path.includes('/usage/') && JSON.parse(text).label === 'escalate')
+    .map(({ text }) => JSON.parse(text))
+  expect(escalationSkips).toEqual([{
+    version: 1,
+    at: '2026-10-05T00:00:00.000Z',
+    sessionId: 's-escalate-gate',
+    agentId: null,
+    event: 'shake',
+    label: 'escalate',
+    outcome: 'skipped',
+    reason: 'nothing worth shaking',
+    results: 0,
+    chars: 0,
+    estimatedSavings: 0,
+    artifactIds: [],
+    contextTokens: 100000,
+    contextPercent: 50,
+    adviseTokens: null,
+    eligibleSavings: 39920,
+    minSavings: 39921,
+  }])
+
+  await complete('t-escalate-gate-1')
+  await complete('t-escalate-gate-2')
+  await complete('t-escalate-gate-3')
+  logs.length = 0
+  await measure(100000)
+  expect(logs).toEqual([])
+  await measure(100001)
+  expect(logs).toEqual(['CTRSCM: requesting proactive shake (context 50.0005%)'])
+})
+
+test('under-trigger measures and lifecycle resets consume pending escalation', {
+  plugins: [protectTurnHost],
+}, async ($, on) => {
+  const logs: string[] = []
+  mock.env(on, { HOME: '/home/example' })
+  mock.clock(on, { now: Date.parse('2026-10-05T00:00:00.000Z') })
+  on('session.id', () => ({ value: 's-escalate-reset' }))
+  on('fs.stat', () => ({ value: { kind: 'file', size: 128, mtimeMs: 0, isLink: false } }))
+  on('fs.read', () => ({
+    value: JSON.stringify({
+      triggerTokens: '50000',
+      triggerPercent: '99',
+      cooldownTurns: '0',
+      protectTokens: '0',
+      protectTurns: '0',
+      aggressiveProtectTokens: '0',
+      minResultTokens: '1',
+      minSavings: '1',
+      protectedTools: 'none',
+    }),
+  }))
+  on('fs.write', () => ({ value: undefined }))
+  on('tool.register', ($, e) => ({ value: { tool: `mcp__ctrscm__${e.name}` } }))
+  on('command.register', ($, e) => ({ value: { command: e.name } }))
+  on('ui.log', ($, e) => {
+    logs.push(e.text)
+    return { value: undefined }
+  })
+  on('session.start', ($, e) => ({ cwd: e.cwd }))
+  on('session.measure', ($, e) => ({ changed: e.changed }))
+  on('classic.SessionStart', () => ({ additionalContext: [] }))
+  await $.session.start({ cwd: '/work', surface: null, isInteractive: false })
+  const measure = (tokens: number) =>
+    $.session.measure({
+      context: { window: 200000, tokens, percent: tokens / 2000 },
+      rateLimits: [],
+      changed: ['context'],
+    })
+  const expectProactive = async () => {
+    await measure(50000)
+    expect(logs).toContain('CTRSCM: requesting proactive shake (context 25%)')
+    expect(logs).not.toContain('CTRSCM: requesting escalation shake (context 25%)')
+    logs.length = 0
+  }
+
+  await expectProactive()
+  await measure(40000)
+  expect(logs).toEqual([])
+  await expectProactive()
+
+  await classicSessionStart($, {
+    hook_event_name: 'SessionStart',
+    source: 'resume',
+    session_id: 's-escalate-reset-resume',
+    transcript_path: '/tmp/escalate-reset-resume.jsonl',
+    cwd: '/work',
+    seconds_since_last_response: 1,
+    context_tokens: 50000,
+    prompt_cache_likely_expired: false,
+  })
+  await expectProactive()
+
+  await measure(50000)
+  logs.length = 0
+  await classicSessionStart($, {
+    hook_event_name: 'SessionStart',
+    source: 'clear',
+    session_id: 's-escalate-reset-clear',
+    transcript_path: '/tmp/escalate-reset-clear.jsonl',
+    cwd: '/work',
+  })
+  await expectProactive()
+
+  logs.length = 0
+  expect(
+    await $.session.compact({
+      trigger: 'precompute',
+      instructions: ESCALATE_MARK,
+      messages: protectTurnMessages,
+    } as never),
+  ).toEqual({ skip: 'ctrscm: nothing to precompute' })
+  await expectProactive()
+})
+const retryEscalationHost: Plugin = {
+  name: 'retry-escalation-host',
+  tier: 'prepend',
+  register(on) {
+    let rejectProactive = true
+    let rejectEscalate = true
+    on('session.compact', ($, e, next) => {
+      if (e.instructions !== 'ctrscm:proactive' && e.instructions !== 'ctrscm:escalate') return next(e)
+      const text = 'x'.repeat(80000)
+      const input = {
+        ...e,
+        messages: [
+          {
+            role: 'assistant' as const,
+            text: '',
+            toolUses: [{ tool_use_id: 'retry-tool', tool: 'Read', input: { file_path: '/work/retry.txt' } }],
+          },
+          {
+            role: 'user' as const,
+            text: '',
+            toolUses: [],
+            toolResults: [{ tool_use_id: 'retry-tool', text, isError: false }],
+          },
+          { role: 'assistant' as const, text, toolUses: [] },
+        ],
+      }
+      if (e.instructions === 'ctrscm:proactive' && rejectProactive) {
+        rejectProactive = false
+        return next.to(input, 'core')
+      }
+      if (e.instructions === 'ctrscm:escalate' && rejectEscalate) {
+        rejectEscalate = false
+        return next.to(input, 'core')
+      }
+      return next(input)
+    })
+  },
+}
+
+test('a retried proactive pass arms one deferred escalation and an aborted turn does not retry it', {
+  plugins: [retryEscalationHost],
+}, async ($, on) => {
+  const logs: string[] = []
+  const writes: Array<{ path: string; text: string }> = []
+  mock.env(on, { HOME: '/home/example' })
+  mock.clock(on, { now: Date.parse('2026-10-05T00:00:00.000Z') })
+  on('session.id', () => ({ value: 's-escalate-retry' }))
+  on('fs.stat', () => ({ value: { kind: 'file', size: 128, mtimeMs: 0, isLink: false } }))
+  on('fs.read', () => ({
+    value: JSON.stringify({
+      triggerTokens: '50000',
+      triggerPercent: '99',
+      cooldownTurns: '3',
+      protectTokens: '0',
+      protectTurns: '0',
+      aggressiveProtectTokens: '0',
+      minResultTokens: '1',
+      minSavings: '1',
+      protectedTools: 'none',
+    }),
+  }))
+  on('fs.write', ($, e) => {
+    writes.push({ path: e.path, text: e.text })
+    return { value: undefined }
+  })
+  on('tool.register', ($, e) => ({ value: { tool: `mcp__ctrscm__${e.name}` } }))
+  on('command.register', ($, e) => ({ value: { command: e.name } }))
+  on('ui.log', ($, e) => {
+    logs.push(e.text)
+    return { value: undefined }
+  })
+  on('session.start', ($, e) => ({ cwd: e.cwd }))
+  on('session.measure', ($, e) => ({ changed: e.changed }))
+  on('turn.complete', ($, e) => ({ text: e.answer }))
+  on('session.usage', () => ({
+    value: {
+      context: { window: 200000, tokens: 50000, percent: 25 },
+      rateLimits: [],
+    },
+  }))
+  await $.session.start({ cwd: '/work', surface: null, isInteractive: false })
+  const measure = () =>
+    $.session.measure({
+      context: { window: 200000, tokens: 50000, percent: 25 },
+      rateLimits: [],
+      changed: ['context'],
+    })
+
+  await measure()
+  expect(logs).toEqual([
+    'CTRSCM: requesting proactive shake (context 25%)',
+    'CTRSCM: proactive shake deferred to turn end: no implementation for session.compact',
+  ])
+
+  logs.length = 0
+  await $.turn.complete({
+    answer: '',
+    durationMs: 1,
+    isAborted: false,
+    turnId: 't-retry-proactive',
+    reason: 'answer',
+  })
+  expect(logs).toContain('CTRSCM: retrying proactive shake at turn end')
+  expect(logs).toContain('CTRSCM: shook 1 tool results (~19960 estimated tokens)')
+
+  logs.length = 0
+  await measure()
+  expect(logs).toEqual([
+    'CTRSCM: requesting escalation shake (context 25%)',
+    'CTRSCM: escalate shake deferred to turn end: no implementation for session.compact',
+  ])
+  expect((await $.command.run(commandRunInput('ctrscm'))).text).toContain('pending: none')
+
+  logs.length = 0
+  await $.turn.complete({
+    answer: '',
+    durationMs: 1,
+    isAborted: true,
+    turnId: 't-retry-aborted',
+    reason: 'aborted',
+  })
+  expect(logs).toEqual([])
+
+  await $.turn.complete({
+    answer: '',
+    durationMs: 1,
+    isAborted: false,
+    turnId: 't-retry-escalate',
+    reason: 'answer',
+  })
+  expect(logs).toContain('CTRSCM: retrying escalate shake at turn end')
+  expect(logs).toContain('CTRSCM: shook 1 tool results (~19960 estimated tokens)')
+  const labels = writes
+    .filter(({ path }) => path.includes('/usage/'))
+    .map(({ text }) => JSON.parse(text))
+    .filter((event) => event.event === 'shake')
+    .map((event) => event.label)
+  expect(labels).toEqual(['proactive', 'escalate'])
+})
 test('queued shake externalizes eligible results below the configured minimum savings', {
   plugins: [protectTurnHost],
 }, async ($, on) => {
@@ -2167,9 +2586,37 @@ test('marked calls skip when eligible savings are below the configured minimum',
     eligibleSavings: 161,
     minSavings: 4000,
   })
+  expect(
+    await $.session.compact({
+      trigger: 'plugin',
+      instructions: ESCALATE_MARK,
+      messages: belowMinSavings,
+    } as never),
+  ).toEqual({ skip: 'ctrscm: nothing worth shaking' })
+  expect(beneath).toBe(0)
+  expect(logs).toEqual([])
+  expect(writes).toHaveLength(2)
+  expect(JSON.parse(writes[1]?.text ?? '')).toEqual({
+    version: 1,
+    at: '2026-10-05T00:00:00.000Z',
+    sessionId: 's-1',
+    agentId: null,
+    event: 'shake',
+    label: 'escalate',
+    outcome: 'skipped',
+    reason: 'nothing worth shaking',
+    results: 0,
+    chars: 0,
+    estimatedSavings: 0,
+    artifactIds: [],
+    contextTokens: null,
+    contextPercent: null,
+    adviseTokens: null,
+    eligibleSavings: 161,
+    minSavings: 4000,
+  })
 
 })
-
 test('unmarked fallback writes its event before calling the builtin layer', async ($, on) => {
   const smallMessages: SessionMessage[] = [
     {
@@ -2294,6 +2741,8 @@ const deferredCompaction: Plugin = {
       const rejection = await $.env.get('COMPACT_REJECT')
       if (e.instructions === 'ctrscm:proactive') {
         await $.env.get('COMPACT_PROACTIVE_MARK')
+      } else if (e.instructions === 'ctrscm:escalate') {
+        await $.env.get('COMPACT_ESCALATE_MARK')
       } else {
         await $.env.get('COMPACT_AGGRESSIVE_MARK')
       }
@@ -2336,6 +2785,10 @@ function deferredHarness($: Engine, on: On, config: Record<string, string> = {})
       requests.push(PROACTIVE_MARK)
       return { value: undefined }
     }
+    if (e.name === 'COMPACT_ESCALATE_MARK') {
+      requests.push(ESCALATE_MARK)
+      return { value: undefined }
+    }
     if (e.name === 'COMPACT_AGGRESSIVE_MARK') {
       requests.push(AGGRESSIVE_MARK)
       return { value: undefined }
@@ -2374,6 +2827,7 @@ function deferredHarness($: Engine, on: On, config: Record<string, string> = {})
     return { value: undefined }
   })
   on('session.start', ($, e) => ({ cwd: e.cwd }))
+  on('classic.SessionStart', () => ({ additionalContext: [] }))
   on('session.measure', ($, e) => ({ changed: e.changed }))
   on('turn.complete', () => ({ text: 'answer kept' }))
   const measure = (tokens = 150000, percent = 75) =>
@@ -2417,6 +2871,73 @@ test('a successful measure does not write a defer event', {
   await $.session.start({ cwd: '/work', surface: null, isInteractive: false })
   await h.measure()
   expect(h.writes.filter(({ path, text }) => path.includes('/usage/') && JSON.parse(text).event === 'defer')).toHaveLength(0)
+})
+
+test('a useless proactive pass gates automatic requests until measured growth', {
+  plugins: [deferredCompaction],
+}, async ($, on) => {
+  const h = deferredHarness($, on, { cooldownTurns: '0', minSavings: '4000' })
+  h.host.reject = false
+  await $.session.start({ cwd: '/work', surface: null, isInteractive: false })
+  await h.measure(150000, 75)
+  expect(h.requests).toEqual([PROACTIVE_MARK])
+  await h.measure(153999, 76)
+  expect(h.requests).toEqual([PROACTIVE_MARK])
+  await h.measure(154000, 77)
+  expect(h.requests).toEqual([PROACTIVE_MARK, PROACTIVE_MARK])
+  await h.measure(149999, 75)
+  expect(h.requests).toEqual([PROACTIVE_MARK, PROACTIVE_MARK, PROACTIVE_MARK])
+})
+
+test('resume and clear reset the proactive growth gate', {
+  plugins: [deferredCompaction],
+}, async ($, on) => {
+  const h = deferredHarness($, on, { cooldownTurns: '0', minSavings: '4000' })
+  h.host.reject = false
+  await $.session.start({ cwd: '/work', surface: null, isInteractive: false })
+  await h.measure(150000, 75)
+  h.requests.length = 0
+  await classicSessionStart($, {
+    hook_event_name: 'SessionStart',
+    source: 'resume',
+    session_id: 's-growth-resume',
+    transcript_path: '/tmp/growth-resume.jsonl',
+    cwd: '/work',
+    seconds_since_last_response: 1,
+    context_tokens: 150000,
+    prompt_cache_likely_expired: false,
+  })
+  await h.measure(150000, 75)
+  expect(h.requests).toEqual([PROACTIVE_MARK])
+  h.requests.length = 0
+  await h.measure(150000, 75)
+  await classicSessionStart($, {
+    hook_event_name: 'SessionStart',
+    source: 'clear',
+    session_id: 's-growth-clear',
+    transcript_path: '/tmp/growth-clear.jsonl',
+    cwd: '/work',
+  })
+  await h.measure(150000, 75)
+  expect(h.requests).toEqual([PROACTIVE_MARK])
+})
+
+test('manual shake bypasses the growth gate and its skip does not replace the gate', {
+  plugins: [deferredCompaction],
+}, async ($, on) => {
+  const h = deferredHarness($, on, { cooldownTurns: '0', minSavings: '4000' })
+  h.host.reject = false
+  await $.session.start({ cwd: '/work', surface: null, isInteractive: false })
+  await h.measure(150000, 75)
+  expect(h.requests).toEqual([PROACTIVE_MARK])
+  h.requests.length = 0
+  expect(await $.command.run(commandRunInput('shake'))).toEqual({
+    text: 'CTRSCM: aggressive shake queued; it runs when the next turn completes',
+  })
+  await h.measure(150001, 75.0005)
+  expect(h.requests).toEqual([AGGRESSIVE_MARK])
+  await h.measure(154000, 77)
+  expect(h.requests).toEqual([AGGRESSIVE_MARK, PROACTIVE_MARK])
 })
 
 test('usageLog off suppresses defer events', {

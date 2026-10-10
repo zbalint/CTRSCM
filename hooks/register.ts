@@ -113,6 +113,8 @@ export function register(on: On, options: PluginOptions): void {
   let isRequesting = false
   let wanted: Request | undefined
   let adviceCooldown = 0
+  let growthGate: { tokens: number; need: number } | undefined
+  let escalateNext = false
   let lastContext: ContextSnapshot = { tokens: null, percent: null }
   let lastTurnAt: number | undefined
   let resumedContextTokens: number | undefined
@@ -125,6 +127,8 @@ export function register(on: On, options: PluginOptions): void {
       lastTurnAt = undefined
       resumedContextTokens = undefined
       lastContext = { tokens: null, percent: null }
+      growthGate = undefined
+      escalateNext = false
     }
 
     const seconds = e.seconds_since_last_response
@@ -292,8 +296,17 @@ export function register(on: On, options: PluginOptions): void {
         percent: e.context.percent ?? null,
       }
       if (!isRequesting && wanted === undefined) {
-        const decision = decideRequest(e.context, config, { cooldown, isPending })
+        if (growthGate !== undefined && typeof e.context.tokens === 'number' && e.context.tokens < growthGate.tokens) {
+          growthGate = undefined
+        }
+        const decision = decideRequest(e.context, config, {
+          cooldown,
+          isPending,
+          escalate: escalateNext,
+          minTokens: growthGate === undefined ? undefined : growthGate.tokens + growthGate.need,
+        })
         cooldown = decision.cooldown
+        escalateNext = false
         if (decision.request === 'aggressive') isPending = false
         if (decision.request !== undefined) {
           const request = decision.request
@@ -302,6 +315,8 @@ export function register(on: On, options: PluginOptions): void {
           isRequesting = true
           if (request === 'proactive') {
             $.ui.log(`CTRSCM: requesting proactive shake (context ${e.context.percent ?? '?'}%)`)
+          } else if (request === 'escalate') {
+            $.ui.log(`CTRSCM: requesting escalation shake (context ${e.context.percent ?? '?'}%)`)
           } else {
             $.ui.log('CTRSCM: requesting aggressive shake')
           }
@@ -383,6 +398,10 @@ export function register(on: On, options: PluginOptions): void {
   on('turn.complete', async ($, e, next) => {
     runningTurns.delete(e.turnId)
     if (e.agentId === undefined) runningTurns.clear()
+    if (e.agentId === undefined) {
+      cooldown = Math.max(0, cooldown - 1)
+      adviceCooldown = Math.max(0, adviceCooldown - 1)
+    }
     const turnContext = { tokens: lastContext.tokens, percent: lastContext.percent }
     const turnCostUsd = lastCostUsd
     const result = await next(e)
@@ -528,8 +547,9 @@ export function register(on: On, options: PluginOptions): void {
   })
 
   on('session.compact', async ($, e, next) => {
-    if (e.trigger === 'precompute') return { skip: 'ctrscm: nothing to precompute' }
     const request = requestOf(e.instructions)
+    if (request !== undefined) escalateNext = false
+    if (e.trigger === 'precompute') return { skip: 'ctrscm: nothing to precompute' }
     if (
       request === undefined &&
       e.trigger === 'manual' &&
@@ -606,12 +626,21 @@ export function register(on: On, options: PluginOptions): void {
     const settings =
       request === 'aggressive'
         ? { ...config, protectTokens: config.aggressiveProtectTokens, protectTurns: 0, minSavings: 0 }
-        : request === 'idle'
-          ? { ...config, minSavings: 0 }
-          : config
+        : request === 'escalate'
+          ? { ...config, protectTokens: config.aggressiveProtectTokens, protectTurns: 0 }
+          : request === 'idle'
+            ? { ...config, minSavings: 0 }
+            : config
     const selection = selectResults(e.messages, settings)
     if (selection.selected.length === 0) {
       const extra = { eligibleSavings: selection.savings, minSavings: settings.minSavings }
+      if ((request === 'proactive' || request === 'escalate') && lastContext.tokens !== null) {
+        // shortcut: estimated need is compared against measured context tokens; this can delay, never force, a shake. Upgrade trigger: B27.
+        growthGate = {
+          tokens: lastContext.tokens,
+          need: Math.max(config.minSavings - selection.savings, config.minResultTokens),
+        }
+      }
       if (request === 'aggressive') $.ui.log('CTRSCM: aggressive shake skipped: nothing worth shaking')
       return request === undefined
         ? fallback('nothing worth shaking', await eventRoot(), true, extra)
@@ -688,6 +717,12 @@ export function register(on: On, options: PluginOptions): void {
       selection.savings,
       artifactIds,
     )
+    if (request === 'proactive') {
+      growthGate = undefined
+      escalateNext = true
+    } else if (request === 'escalate' || request === 'aggressive') {
+      growthGate = undefined
+    }
     return { messages }
   })
 }
